@@ -18,7 +18,7 @@ import {
 import { Navbar } from "@/components/layout/navbar";
 import { PageLayout } from "@/components/layout/page-layout";
 import {
-  Users, Calendar, Clock, UserPlus, Plus, Trash2, Loader2,
+  Users, Calendar, Clock, UserPlus, Plus, Trash2, Pencil, Loader2,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
@@ -41,7 +41,8 @@ interface AppUser {
 interface AppEvent {
   id: number;
   title: string;
-  date: string;
+  startDate: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   location: string | null;
@@ -215,7 +216,7 @@ function OverviewTab({ stats }: { stats: DashboardStats | null }) {
                 {stats.upcomingEvents.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="font-medium">{e.title}</TableCell>
-                    <TableCell>{format(parseISO(e.date), "MMM d, yyyy")}</TableCell>
+                    <TableCell>{format(parseISO(e.startDate), "MMM d, yyyy")}</TableCell>
                     <TableCell>{e.startTime.slice(0, 5)} - {e.endTime.slice(0, 5)}</TableCell>
                   </TableRow>
                 ))}
@@ -230,11 +231,16 @@ function OverviewTab({ stats }: { stats: DashboardStats | null }) {
 
 function UsersTab({ users, setUsers }: { users: AppUser[]; setUsers: (u: AppUser[]) => void }) {
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editUser, setEditUser] = useState<AppUser | null>(null);
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("member");
+  const [editFullName, setEditFullName] = useState("");
+  const [editRole, setEditRole] = useState("member");
   const [loading, setLoading] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
@@ -273,6 +279,39 @@ function UsersTab({ users, setUsers }: { users: AppUser[]; setUsers: (u: AppUser
       toast.success("User deleted");
     } else {
       toast.error("Failed to delete");
+    }
+  };
+
+  const openEdit = (u: AppUser) => {
+    setEditUser(u);
+    setEditFullName(u.fullName);
+    setEditRole(u.role);
+    setEditOpen(true);
+  };
+
+  const handleEdit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editUser) return;
+    setEditLoading(true);
+    try {
+      const res = await fetch(`/api/users/${editUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName: editFullName, role: editRole }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setUsers(users.map((u) => u.id === updated.id ? { ...u, fullName: updated.fullName, role: updated.role } : u));
+        toast.success("User updated");
+        setEditOpen(false);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed");
+      }
+    } catch {
+      toast.error("Connection error");
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -326,6 +365,38 @@ function UsersTab({ users, setUsers }: { users: AppUser[]; setUsers: (u: AppUser
             </form>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Edit User</DialogTitle></DialogHeader>
+            <form onSubmit={handleEdit} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Username</Label>
+                <Input value={editUser?.username || ""} disabled className="bg-muted" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editFullName">Full Name</Label>
+                <Input id="editFullName" value={editFullName} onChange={(e) => setEditFullName(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editRole">Role</Label>
+                <Select value={editRole} onValueChange={(v) => v && setEditRole(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">Member</SelectItem>
+                    <SelectItem value="organizer">Organizer</SelectItem>
+                    <SelectItem value="volunteer">Volunteer</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" className="w-full" disabled={editLoading}>
+                {editLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Changes
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card>
@@ -337,7 +408,7 @@ function UsersTab({ users, setUsers }: { users: AppUser[]; setUsers: (u: AppUser
                 <TableHead>Full Name</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Created</TableHead>
-                <TableHead className="w-16"></TableHead>
+                <TableHead className="w-24"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -350,9 +421,14 @@ function UsersTab({ users, setUsers }: { users: AppUser[]; setUsers: (u: AppUser
                     {format(parseISO(u.createdAt), "MMM d, yyyy")}
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(u.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(u)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(u.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -378,7 +454,8 @@ function EventsTab({ events, setEvents }: {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [date, setDate] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("17:00");
   const [location, setLocation] = useState("");
@@ -391,7 +468,7 @@ function EventsTab({ events, setEvents }: {
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, date, startTime, endTime, location: location || undefined }),
+        body: JSON.stringify({ title, description, startDate, endDate, startTime, endTime, location: location || undefined }),
       });
       if (res.ok) {
         const newEvent = await res.json();
@@ -400,7 +477,8 @@ function EventsTab({ events, setEvents }: {
         setOpen(false);
         setTitle("");
         setDescription("");
-        setDate("");
+        setStartDate("");
+        setEndDate("");
         setStartTime("09:00");
         setEndTime("17:00");
         setLocation("");
@@ -426,7 +504,7 @@ function EventsTab({ events, setEvents }: {
     }
   };
 
-  const isPast = (date: string) => date < new Date().toISOString().slice(0, 10);
+  const isPast = (endDate: string) => endDate < new Date().toISOString().slice(0, 10);
 
   return (
     <div className="space-y-4">
@@ -446,9 +524,15 @@ function EventsTab({ events, setEvents }: {
                 <Label htmlFor="desc">Description (optional)</Label>
                 <Textarea id="desc" value={description} onChange={(e) => setDescription(e.target.value)} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
-                <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="startDate">Start Date</Label>
+                  <Input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="endDate">End Date</Label>
+                  <Input id="endDate" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -490,9 +574,9 @@ function EventsTab({ events, setEvents }: {
                 <TableRow key={e.id}>
                   <TableCell className="font-medium">
                     {e.title}
-                    {isPast(e.date) && <Badge variant="secondary" className="ml-2">Past</Badge>}
+                    {isPast(e.endDate) && <Badge variant="secondary" className="ml-2">Past</Badge>}
                   </TableCell>
-                  <TableCell>{format(parseISO(e.date), "MMM d, yyyy")}</TableCell>
+                  <TableCell>{e.startDate === e.endDate ? format(parseISO(e.startDate), "MMM d, yyyy") : `${format(parseISO(e.startDate), "MMM d")} - ${format(parseISO(e.endDate), "MMM d, yyyy")}`}</TableCell>
                   <TableCell className="font-mono text-sm">{e.startTime.slice(0, 5)} - {e.endTime.slice(0, 5)}</TableCell>
                   <TableCell className="text-muted-foreground">{e.location || "-"}</TableCell>
                   <TableCell>

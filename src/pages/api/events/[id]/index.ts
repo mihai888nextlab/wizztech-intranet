@@ -5,7 +5,7 @@ import { events } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await getSession();
+  const session = await getSession(req, res);
   if (!session.isLoggedIn) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -26,11 +26,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "PATCH") {
-    const { title, description, date, startTime, endTime, location } = req.body;
+    const { title, description, startDate, endDate, startTime, endTime, location } = req.body;
     const updateData: Record<string, string> = {};
     if (title) updateData.title = title;
     if (description !== undefined) updateData.description = description;
-    if (date) updateData.date = date;
+    if (startDate) updateData.startDate = startDate;
+    if (endDate) updateData.endDate = endDate;
     if (startTime) updateData.startTime = startTime;
     if (endTime) updateData.endTime = endTime;
     if (location !== undefined) updateData.location = location;

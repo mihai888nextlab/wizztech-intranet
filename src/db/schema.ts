@@ -1,4 +1,5 @@
 import { pgTable, serial, varchar, text, timestamp, time, date, integer, uniqueIndex } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -13,7 +14,8 @@ export const events = pgTable("events", {
   id: serial("id").primaryKey(),
   title: varchar("title", { length: 200 }).notNull(),
   description: text("description"),
-  date: date("date").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
   startTime: time("start_time").notNull(),
   endTime: time("end_time").notNull(),
   location: varchar("location", { length: 200 }),
@@ -39,3 +41,23 @@ export const labSessions = pgTable("lab_sessions", {
   note: text("note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const usersRelations = relations(users, ({ many }) => ({
+  attendance: many(attendance),
+  labSessions: many(labSessions),
+  createdEvents: many(events),
+}));
+
+export const eventsRelations = relations(events, ({ one, many }) => ({
+  creator: one(users, { fields: [events.createdBy], references: [users.id] }),
+  attendance: many(attendance),
+}));
+
+export const attendanceRelations = relations(attendance, ({ one }) => ({
+  user: one(users, { fields: [attendance.userId], references: [users.id] }),
+  event: one(events, { fields: [attendance.eventId], references: [events.id] }),
+}));
+
+export const labSessionsRelations = relations(labSessions, ({ one }) => ({
+  user: one(users, { fields: [labSessions.userId], references: [users.id] }),
+}));

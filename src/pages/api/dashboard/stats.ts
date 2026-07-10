@@ -5,7 +5,7 @@ import { users, events, attendance, labSessions } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await getSession();
+  const session = await getSession(req, res);
   if (!session.isLoggedIn) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -22,8 +22,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const upcomingEvents = await db.select()
     .from(events)
-    .where(sql`date >= CURRENT_DATE`)
-    .orderBy(events.date)
+    .where(sql`end_date >= CURRENT_DATE`)
+    .orderBy(events.startDate)
     .limit(5);
 
   if (session.role === "admin") {

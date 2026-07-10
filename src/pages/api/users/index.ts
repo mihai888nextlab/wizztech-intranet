@@ -5,7 +5,7 @@ import { hashPassword, requireAuth } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await requireAuth(["admin"]);
+  const session = await requireAuth(req, res, ["admin"]);
   if (!session) {
     return res.status(401).json({ error: "Unauthorized" });
   }

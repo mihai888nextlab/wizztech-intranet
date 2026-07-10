@@ -22,7 +22,8 @@ interface Event {
   id: number;
   title: string;
   description: string | null;
-  date: string;
+  startDate: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   location: string | null;
@@ -51,8 +52,9 @@ export default function EventsPage() {
 
   if (!user) return null;
 
-  const upcoming = events.filter((e) => e.date >= new Date().toISOString().slice(0, 10));
-  const past = events.filter((e) => e.date < new Date().toISOString().slice(0, 10));
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = events.filter((e) => e.endDate >= today);
+  const past = events.filter((e) => e.endDate < today);
 
   const canCreate = user.role === "admin" || user.role === "organizer";
 
@@ -63,8 +65,8 @@ export default function EventsPage() {
         <div className="flex justify-end">
           {canCreate && (
             <Button onClick={() => router.push("/dashboard?tab=events")}>
-                <Plus /> New Event
-              </Button>
+              <Plus /> New Event
+            </Button>
           )}
         </div>
 
@@ -104,10 +106,22 @@ export default function EventsPage() {
   );
 }
 
+function formatDateRange(startDate: string, endDate: string) {
+  if (startDate === endDate) {
+    return format(parseISO(startDate), "EEE, MMM d, yyyy");
+  }
+  const start = parseISO(startDate);
+  const end = parseISO(endDate);
+  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+    return `${format(start, "MMM d")} - ${format(end, "d, yyyy")}`;
+  }
+  return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
+}
+
 function EventCard({ event }: { event: Event }) {
-  const eventDate = parseISO(event.date);
-  const isToday = event.date === new Date().toISOString().slice(0, 10);
-  const isPast = event.date < new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const isOngoing = event.startDate <= today && event.endDate >= today;
+  const isPast = event.endDate < today;
 
   return (
     <Link href={`/events/${event.id}`}>
@@ -115,14 +129,14 @@ function EventCard({ event }: { event: Event }) {
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="text-base">{event.title}</CardTitle>
-            {isToday && <Badge variant="default">Today</Badge>}
+            {isOngoing && <Badge variant="default">Ongoing</Badge>}
             {isPast && <Badge variant="secondary">Past</Badge>}
           </div>
         </CardHeader>
         <CardContent className="space-y-1.5 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <Calendar className="h-3.5 w-3.5" />
-            <span>{format(eventDate, "EEE, MMM d, yyyy")}</span>
+            <span>{formatDateRange(event.startDate, event.endDate)}</span>
           </div>
           <div className="flex items-center gap-2">
             <Clock className="h-3.5 w-3.5" />

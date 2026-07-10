@@ -24,7 +24,8 @@ interface Event {
   id: number;
   title: string;
   description: string | null;
-  date: string;
+  startDate: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   location: string | null;
@@ -38,6 +39,18 @@ interface Attendee {
   eventId: number;
   signedInAt: string;
   user: { fullName: string; username: string };
+}
+
+function formatDateRange(startDate: string, endDate: string) {
+  if (startDate === endDate) {
+    return format(parseISO(startDate), "EEEE, MMMM d, yyyy");
+  }
+  const start = parseISO(startDate);
+  const end = parseISO(endDate);
+  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+    return `${format(start, "MMM d")} - ${format(end, "d, yyyy")}`;
+  }
+  return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
 }
 
 export default function EventDetailPage() {
@@ -70,7 +83,9 @@ export default function EventDetailPage() {
   if (!user || !id) return null;
 
   const isSignedIn = attendees.some((a) => a.userId === user.userId);
-  const isPast = event && event.date < new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const isPast = event && event.endDate < today;
+  const isOngoing = event && event.startDate <= today && event.endDate >= today;
 
   const handleAttendance = async () => {
     setSigning(true);
@@ -114,6 +129,7 @@ export default function EventDetailPage() {
                 <div className="flex items-start gap-3">
                   <h1 className="text-2xl font-bold">{event.title}</h1>
                   {isPast && <Badge variant="secondary">Past</Badge>}
+                  {isOngoing && <Badge>Ongoing</Badge>}
                 </div>
                 {event.description && (
                   <p className="text-muted-foreground mt-2">{event.description}</p>
@@ -125,7 +141,7 @@ export default function EventDetailPage() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Calendar className="h-4 w-4" />
-                  <span>{format(parseISO(event.date), "EEEE, MMMM d, yyyy")}</span>
+                  <span>{formatDateRange(event.startDate, event.endDate)}</span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Clock className="h-4 w-4" />

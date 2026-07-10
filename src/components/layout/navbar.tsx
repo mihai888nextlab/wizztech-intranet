@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -45,6 +46,7 @@ export function Navbar({ user }: NavbarProps) {
   const navLinks = [
     { href: "/events", label: "Events" },
     { href: "/lab", label: "Lab Hours" },
+    { href: "/leaderboard", label: "Leaderboard" },
     { href: "/profile", label: "Profile" },
     ...(isOrganizer ? [{ href: "/dashboard", label: "Dashboard" }] : []),
   ];
@@ -80,12 +82,14 @@ export function Navbar({ user }: NavbarProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <div className="flex flex-col">
-                <span>{user.fullName}</span>
-                <span className="text-xs text-muted-foreground capitalize">@{user.username} &middot; {user.role}</span>
-              </div>
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>
+                <div className="flex flex-col">
+                  <span>{user.fullName}</span>
+                  <span className="text-xs text-muted-foreground capitalize">@{user.username} &middot; {user.role}</span>
+                </div>
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/profile")}>
               <User /> Profile

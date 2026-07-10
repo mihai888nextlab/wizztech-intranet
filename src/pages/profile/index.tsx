@@ -21,7 +21,8 @@ interface User {
 interface Event {
   id: number;
   title: string;
-  date: string;
+  startDate: string;
+  endDate: string;
   startTime: string;
   endTime: string;
 }
@@ -158,7 +159,7 @@ export default function ProfilePage() {
                   {attendedEvents.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell className="font-medium">{a.event.title}</TableCell>
-                      <TableCell>{format(parseISO(a.event.date), "MMM d, yyyy")}</TableCell>
+                      <TableCell>{a.event.startDate === a.event.endDate ? format(parseISO(a.event.startDate), "MMM d, yyyy") : `${format(parseISO(a.event.startDate), "MMM d")} - ${format(parseISO(a.event.endDate), "MMM d, yyyy")}`}</TableCell>
                       <TableCell>{format(parseISO(a.signedInAt), "h:mm a")}</TableCell>
                     </TableRow>
                   ))}

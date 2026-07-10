@@ -6,7 +6,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const session = await getSession();
+  const session = await getSession(req, res);
   session.destroy();
   res.status(200).json({ success: true });
 }

@@ -5,7 +5,7 @@ import { labSessions } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await getSession();
+  const session = await getSession(req, res);
   if (!session.isLoggedIn) {
     return res.status(401).json({ error: "Not authenticated" });
   }

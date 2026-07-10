@@ -1,5 +1,5 @@
 import { getIronSession, IronSession } from "iron-session";
-import { cookies } from "next/headers";
+import type { NextApiRequest, NextApiResponse } from "next";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -25,10 +25,8 @@ const sessionOptions = {
   },
 };
 
-export async function getSession(): Promise<IronSession<SessionData>> {
-  const cookieStore = await cookies();
-  const session = await getIronSession<SessionData>(cookieStore, sessionOptions);
-  return session;
+export async function getSession(req: NextApiRequest, res: NextApiResponse): Promise<IronSession<SessionData>> {
+  return getIronSession<SessionData>(req, res, sessionOptions);
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -52,8 +50,8 @@ export async function authenticateUser(username: string, password: string) {
   return user;
 }
 
-export async function requireAuth(role?: UserRole[]) {
-  const session = await getSession();
+export async function requireAuth(req: NextApiRequest, res: NextApiResponse, role?: UserRole[]) {
+  const session = await getSession(req, res);
   if (!session.isLoggedIn) {
     return null;
   }
@@ -63,6 +61,6 @@ export async function requireAuth(role?: UserRole[]) {
   return session;
 }
 
-export async function requireAdmin() {
-  return requireAuth(["admin"]);
+export async function requireAdmin(req: NextApiRequest, res: NextApiResponse) {
+  return requireAuth(req, res, ["admin"]);
 }

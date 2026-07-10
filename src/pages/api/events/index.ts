@@ -5,13 +5,13 @@ import { events } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await getSession();
+  const session = await getSession(req, res);
   if (!session.isLoggedIn) {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
   if (req.method === "GET") {
-    const allEvents = await db.select().from(events).orderBy(desc(events.date));
+    const allEvents = await db.select().from(events).orderBy(desc(events.startDate));
     return res.status(200).json(allEvents);
   }
 
@@ -20,15 +20,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({ error: "Only admins and organizers can create events" });
     }
 
-    const { title, description, date, startTime, endTime, location } = req.body;
-    if (!title || !date || !startTime || !endTime) {
-      return res.status(400).json({ error: "Title, date, start time, and end time are required" });
+    const { title, description, startDate, endDate, startTime, endTime, location } = req.body;
+    if (!title || !startDate || !endDate || !startTime || !endTime) {
+      return res.status(400).json({ error: "Title, start date, end date, start time, and end time are required" });
     }
 
     const [event] = await db.insert(events).values({
       title,
       description,
-      date,
+      startDate,
+      endDate,
       startTime,
       endTime,
       location,

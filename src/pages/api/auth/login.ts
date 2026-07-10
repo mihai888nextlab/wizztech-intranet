@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: "Invalid username or password" });
   }
 
-  const session = await getSession();
+  const session = await getSession(req, res);
   session.userId = user.id;
   session.username = user.username;
   session.fullName = user.fullName;
