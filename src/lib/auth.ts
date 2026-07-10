@@ -1,0 +1,68 @@
+import { getIronSession, IronSession } from "iron-session";
+import { cookies } from "next/headers";
+import bcrypt from "bcryptjs";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { users } from "@/db/schema";
+
+export type UserRole = "admin" | "organizer" | "volunteer" | "member";
+
+export interface SessionData {
+  userId: number;
+  username: string;
+  fullName: string;
+  role: UserRole;
+  isLoggedIn: boolean;
+}
+
+const sessionOptions = {
+  password: process.env.SESSION_SECRET || "complex_password_at_least_32_characters_long_for_security",
+  cookieName: "wizztech_session",
+  cookieOptions: {
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    sameSite: "lax" as const,
+  },
+};
+
+export async function getSession(): Promise<IronSession<SessionData>> {
+  const cookieStore = await cookies();
+  const session = await getIronSession<SessionData>(cookieStore, sessionOptions);
+  return session;
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 10);
+}
+
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+export async function authenticateUser(username: string, password: string) {
+  const user = await db.query.users.findFirst({
+    where: eq(users.username, username),
+  });
+
+  if (!user) return null;
+
+  const valid = await verifyPassword(password, user.passwordHash);
+  if (!valid) return null;
+
+  return user;
+}
+
+export async function requireAuth(role?: UserRole[]) {
+  const session = await getSession();
+  if (!session.isLoggedIn) {
+    return null;
+  }
+  if (role && !role.includes(session.role as UserRole)) {
+    return null;
+  }
+  return session;
+}
+
+export async function requireAdmin() {
+  return requireAuth(["admin"]);
+}
