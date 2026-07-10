@@ -118,7 +118,7 @@ async function seedEvents(db: ReturnType<typeof drizzle>, adminId: number) {
 }
 
 async function seed() {
-  const connection = neon(process.env.DATABASE_URL!);
+  const connection = neon(process.env.NEON_DATABASE_URL!);
   const db = drizzle(connection);
 
   const adminId = await ensureAdmin(db);
