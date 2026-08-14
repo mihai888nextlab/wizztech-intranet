@@ -1,9 +1,14 @@
 import { useState, useEffect, FormEvent } from "react";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
-import { FileText, Megaphone, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
+import { ClipboardList, FileText, Megaphone, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import {
+  AnnouncementAttachments,
+  type AnnouncementAttachment,
+} from "@/components/announcements/announcement-attachments";
+import { LinkedForm } from "@/components/documents/linked-form";
 import { LinkedRequest } from "@/components/documents/linked-request";
 import { ShareDialog } from "@/components/share-dialog";
 import { EmptyState } from "@/components/empty-state";
@@ -33,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useUser } from "@/hooks/use-user";
 import { TITLE_MAX } from "@/lib/announcements";
 import type { FileRequest, Submission } from "@/lib/documents";
+import type { FormRequest, FormSubmission } from "@/lib/forms";
 import { announcementShareText } from "@/lib/share";
 import { initialsOf } from "@/lib/format";
 
@@ -45,6 +51,8 @@ interface Announcement {
   updatedAt: string;
   author: { fullName: string; username: string } | null;
   documents: FileRequest[];
+  forms: FormRequest[];
+  files: AnnouncementAttachment[];
 }
 
 export default function AnnouncementsPage() {
@@ -55,6 +63,7 @@ export default function AnnouncementsPage() {
   const [editing, setEditing] = useState<Announcement | null>(null);
   const [deleting, setDeleting] = useState<Announcement | null>(null);
   const [requests, setRequests] = useState<FileRequest[]>([]);
+  const [formRequests, setFormRequests] = useState<FormRequest[]>([]);
   const [sharing, setSharing] = useState<string | null>(null);
 
   useEffect(() => {
@@ -66,9 +75,13 @@ export default function AnnouncementsPage() {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    fetch("/api/file-requests")
-      .then((res) => (res.ok ? res.json() : []))
-      .then(setRequests);
+    Promise.all([
+      fetch("/api/file-requests").then((res) => (res.ok ? res.json() : [])),
+      fetch("/api/form-requests").then((res) => (res.ok ? res.json() : [])),
+    ]).then(([fileRequests, forms]) => {
+      setRequests(fileRequests);
+      setFormRequests(forms);
+    });
   }, [user?.role]);
 
   // The list is fetched client-side, so the browser cannot act on the hash by
@@ -109,6 +122,21 @@ export default function AnnouncementsPage() {
           d.id === requestId ? { ...d, mySubmission: submission } : d
         ),
       }))
+    );
+
+  const applyFormSubmission = (requestId: number, submission: FormSubmission) =>
+    setItems((prev) =>
+      prev.map((a) => ({
+        ...a,
+        forms: a.forms.map((f) =>
+          f.id === requestId ? { ...f, mySubmission: submission } : f
+        ),
+      }))
+    );
+
+  const applyFilesChange = (announcementId: number, files: AnnouncementAttachment[]) =>
+    setItems((prev) =>
+      prev.map((a) => (a.id === announcementId ? { ...a, files } : a))
     );
 
   const handleDelete = async () => {
@@ -171,6 +199,8 @@ export default function AnnouncementsPage() {
               onDelete={() => setDeleting(item)}
               onShare={() => openShare(item)}
               onSubmitted={applySubmission}
+              onSubmittedForm={applyFormSubmission}
+              onFilesChange={applyFilesChange}
             />
           ))}
         </div>
@@ -181,6 +211,7 @@ export default function AnnouncementsPage() {
           open={creating || editing !== null}
           existing={editing}
           requests={requests}
+          formRequests={formRequests}
           onOpenChange={(open) => {
             if (!open) {
               setCreating(false);
@@ -219,6 +250,8 @@ function AnnouncementCard({
   onDelete,
   onShare,
   onSubmitted,
+  onSubmittedForm,
+  onFilesChange,
 }: {
   announcement: Announcement;
   isAdmin: boolean;
@@ -226,6 +259,8 @@ function AnnouncementCard({
   onDelete: () => void;
   onShare: () => void;
   onSubmitted: (requestId: number, submission: Submission) => void;
+  onSubmittedForm: (requestId: number, submission: FormSubmission) => void;
+  onFilesChange: (announcementId: number, files: AnnouncementAttachment[]) => void;
 }) {
   const posted = parseISO(announcement.createdAt);
   const edited = announcement.updatedAt !== announcement.createdAt;
@@ -310,6 +345,30 @@ function AnnouncementCard({
           ))}
         </section>
       )}
+
+      {announcement.forms.length > 0 && (
+        <section className="mt-4 space-y-2 border-t border-border pt-4">
+          <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <ClipboardList className="size-3.5" />
+            {isAdmin ? "Linked field requests" : "Fields to fill in"}
+          </h3>
+          {announcement.forms.map((request) => (
+            <LinkedForm
+              key={request.id}
+              request={request}
+              isAdmin={isAdmin}
+              onSubmitted={onSubmittedForm}
+            />
+          ))}
+        </section>
+      )}
+
+      <AnnouncementAttachments
+        announcementId={announcement.id}
+        files={announcement.files}
+        isAdmin={isAdmin}
+        onChanged={(files) => onFilesChange(announcement.id, files)}
+      />
     </article>
   );
 }
@@ -318,12 +377,14 @@ function AnnouncementDialog({
   open,
   existing,
   requests,
+  formRequests,
   onOpenChange,
   onSaved,
 }: {
   open: boolean;
   existing: Announcement | null;
   requests: FileRequest[];
+  formRequests: FormRequest[];
   onOpenChange: (open: boolean) => void;
   onSaved: (announcement: Announcement, isNew: boolean) => void;
 }) {
@@ -332,6 +393,7 @@ function AnnouncementDialog({
   const [tab, setTab] = useState("write");
   const [saving, setSaving] = useState(false);
   const [documentIds, setDocumentIds] = useState<number[]>([]);
+  const [formIds, setFormIds] = useState<number[]>([]);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   // Load the form when the dialog opens, and clear it once it closes.
@@ -341,6 +403,7 @@ function AnnouncementDialog({
     setTitle(existing?.title ?? "");
     setDescription(existing?.description ?? "");
     setDocumentIds(existing ? existing.documents.map((d) => d.id) : []);
+    setFormIds(existing ? existing.forms.map((f) => f.id) : []);
     setTab("write");
   }
   if (!open && loadedKey !== null) {
@@ -356,7 +419,7 @@ function AnnouncementDialog({
         {
           method: existing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, description, documentIds }),
+          body: JSON.stringify({ title, description, documentIds, formIds }),
         }
       );
       if (!res.ok) {
@@ -484,6 +547,60 @@ function AnnouncementDialog({
             )}
             <p className="text-xs text-muted-foreground">
               Linked requests appear under the post, with an upload button for
+              whoever they apply to.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Ask for specific fields</Label>
+            {formRequests.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground">
+                No field requests yet. Create one on the Documents → Fields tab
+                and it will show up here.
+              </p>
+            ) : (
+              <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1.5">
+                {formRequests.map((request) => {
+                  const checked = formIds.includes(request.id);
+                  return (
+                    <label
+                      key={request.id}
+                      className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(next) =>
+                          setFormIds((prev) =>
+                            next
+                              ? [...prev, request.id]
+                              : prev.filter((id) => id !== request.id)
+                          )
+                        }
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm">
+                        {request.title}
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          {request.fields.length} field
+                          {request.fields.length === 1 ? "" : "s"}
+                        </span>
+                        {request.dueDate && (
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            due {format(parseISO(request.dueDate), "MMM d")}
+                          </span>
+                        )}
+                        {request.closedAt && (
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            closed
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Linked field requests appear under the post, with a form for
               whoever they apply to.
             </p>
           </div>

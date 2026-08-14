@@ -11,6 +11,16 @@ import {
   setAnnouncementDocuments,
   shapeLinkedDocuments,
 } from "@/lib/announcement-documents";
+import {
+  announcementFormsWith,
+  parseFormRequestIds,
+  setAnnouncementForms,
+  shapeLinkedForms,
+} from "@/lib/announcement-forms";
+import {
+  announcementFilesWith,
+  shapeAttachment,
+} from "@/lib/announcement-files";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await requireAuth(req, res, ["admin"]);
@@ -51,17 +61,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     await setAnnouncementDocuments(id, parseDocumentIds(req.body));
+    await setAnnouncementForms(id, parseFormRequestIds(req.body));
 
     const hydrated = await db.query.announcements.findFirst({
       where: eq(announcements.id, id),
-      with: announcementDocumentsWith,
+      with: { ...announcementDocumentsWith, ...announcementFormsWith, ...announcementFilesWith },
     });
     if (!hydrated) return res.status(200).json(updated);
 
-    const { documents, ...announcement } = hydrated;
+    const { documents = [], forms = [], files = [], ...announcement } = hydrated;
+    const totalUsers = await countUsers();
     return res.status(200).json({
       ...announcement,
-      documents: shapeLinkedDocuments(documents, session, await countUsers()),
+      documents: shapeLinkedDocuments(documents, session, totalUsers),
+      forms: shapeLinkedForms(forms, session, totalUsers),
+      files: files.map(shapeAttachment),
     });
   }
 

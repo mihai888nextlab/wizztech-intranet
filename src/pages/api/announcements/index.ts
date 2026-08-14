@@ -9,6 +9,16 @@ import {
   setAnnouncementDocuments,
   shapeLinkedDocuments,
 } from "@/lib/announcement-documents";
+import {
+  announcementFormsWith,
+  parseFormRequestIds,
+  setAnnouncementForms,
+  shapeLinkedForms,
+} from "@/lib/announcement-forms";
+import {
+  announcementFilesWith,
+  shapeAttachment,
+} from "@/lib/announcement-files";
 import { parseAnnouncementInput } from "@/lib/announcements";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -23,15 +33,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const [all, totalUsers] = await Promise.all([
       db.query.announcements.findMany({
         orderBy: announcementsNewestFirst,
-        with: announcementDocumentsWith,
+        with: { ...announcementDocumentsWith, ...announcementFormsWith, ...announcementFilesWith },
       }),
       countUsers(),
     ]);
 
     return res.status(200).json(
-      all.map(({ documents, ...announcement }) => ({
+      all.map(({ documents, forms, files, ...announcement }) => ({
         ...announcement,
         documents: shapeLinkedDocuments(documents, session, totalUsers),
+        forms: shapeLinkedForms(forms, session, totalUsers),
+        files: files.map(shapeAttachment),
       }))
     );
   }
@@ -52,22 +64,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .returning();
 
     await setAnnouncementDocuments(created.id, parseDocumentIds(req.body));
+    await setAnnouncementForms(created.id, parseFormRequestIds(req.body));
 
     const withDocuments = await db.query.announcements.findFirst({
       where: (a, { eq }) => eq(a.id, created.id),
-      with: announcementDocumentsWith,
+      with: { ...announcementDocumentsWith, ...announcementFormsWith, ...announcementFilesWith },
     });
 
     const totalUsers = await countUsers();
-    const { documents, ...announcement } = withDocuments ?? {
+    const { documents = [], forms = [], files = [], ...announcement } = withDocuments ?? {
       ...created,
       author: null,
       documents: [],
+      forms: [],
+      files: [],
     };
 
     return res.status(201).json({
       ...announcement,
-      documents: shapeLinkedDocuments(documents ?? [], session, totalUsers),
+      documents: shapeLinkedDocuments(documents, session, totalUsers),
+      forms: shapeLinkedForms(forms, session, totalUsers),
+      files: files.map(shapeAttachment),
     });
   }
 

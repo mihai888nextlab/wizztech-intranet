@@ -18,7 +18,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import type { SessionUser } from "@/hooks/use-user";
 import { initialsOf } from "@/lib/format";
-import { isActive, isOrganizer, PRIMARY_NAV, topBarNavFor } from "@/lib/nav";
+import { isActive, isOrganizer, topBarNavFor } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 interface AppShellProps {
@@ -82,7 +82,7 @@ export function AppShell({
         {children}
       </main>
 
-      <TabBar />
+      <TabBar user={user} />
     </div>
   );
 }
@@ -174,7 +174,7 @@ function AccountMenu({ user }: { user: SessionUser }) {
         <DropdownMenuItem onClick={() => router.push("/profile")}>
           <UserIcon /> Profile
         </DropdownMenuItem>
-        {/* Dashboard lives here rather than the tab bar, which is full. */}
+        {/* Dashboard is here too — on phones it also appears in the tab bar. */}
         {isOrganizer(user.role) && (
           <DropdownMenuItem onClick={() => router.push("/dashboard")}>
             <LayoutDashboard /> Dashboard
@@ -190,9 +190,9 @@ function AccountMenu({ user }: { user: SessionUser }) {
 }
 
 /** Fixed bottom navigation — the primary way around the app on a phone. */
-function TabBar() {
+function TabBar({ user }: { user: SessionUser }) {
   const router = useRouter();
-  const items = PRIMARY_NAV;
+  const items = topBarNavFor(user.role);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 chrome-blur pb-safe lg:hidden">

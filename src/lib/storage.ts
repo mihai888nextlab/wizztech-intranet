@@ -64,6 +64,16 @@ function bucket() {
   return requireEnv("S3_BUCKET");
 }
 
+/** Turns a user-supplied filename into something safe to embed in an object key. */
+function safeObjectName(fileName: string) {
+  return fileName
+    .normalize("NFKD")
+    .replace(/[^\w.\- ]+/g, "")
+    .replace(/\s+/g, "-")
+    .slice(-80)
+    .replace(/^[.-]+/, "");
+}
+
 /**
  * Object key for a submission. The uuid keeps keys unguessable, but access is
  * still authorised on every request — the bucket itself is never public.
@@ -73,13 +83,14 @@ export function submissionKey(
   userId: number,
   fileName: string
 ) {
-  const safe = fileName
-    .normalize("NFKD")
-    .replace(/[^\w.\- ]+/g, "")
-    .replace(/\s+/g, "-")
-    .slice(-80)
-    .replace(/^[.-]+/, "");
+  const safe = safeObjectName(fileName);
   return `requests/${requestId}/${userId}/${crypto.randomUUID()}-${safe || "file"}`;
+}
+
+/** Object key for a file attached to an announcement. */
+export function attachmentKey(announcementId: number, fileName: string) {
+  const safe = safeObjectName(fileName);
+  return `announcements/${announcementId}/${crypto.randomUUID()}-${safe || "file"}`;
 }
 
 /** Presigned PUT. The client must send a matching Content-Type. */

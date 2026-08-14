@@ -18,8 +18,8 @@ export interface NavItem {
 }
 
 /**
- * The everyday destinations, filling the mobile tab bar. Dashboard is not here
- * — it lives in the account menu so the bar stays at six slots.
+ * The everyday destinations, filling the mobile tab bar. Dashboard is appended
+ * by `topBarNavFor` for organizers, so it stays out of the way for members.
  */
 export const PRIMARY_NAV: NavItem[] = [
   { href: "/events", label: "Events", short: "Events", icon: CalendarDays },

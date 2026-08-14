@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, timestamp, time, date, integer, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, timestamp, time, date, integer, boolean, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 export const users = pgTable("users", {
@@ -94,6 +94,101 @@ export const fileSubmissions = pgTable("file_submissions", {
   requestUserUnique: uniqueIndex("file_submission_unique").on(table.requestId, table.userId),
 }));
 
+/**
+ * A request for members to fill in structured fields instead of uploading a
+ * file. Mirrors fileRequests, with the fields table carrying the questions.
+ */
+export const formRequests = pgTable("form_requests", {
+  id: serial("id").primaryKey(),
+  title: varchar("title", { length: 200 }).notNull(),
+  /** Markdown source, rendered on the client. */
+  description: text("description"),
+  /** "all" targets every member; "selected" uses formRequestAssignees. */
+  audience: varchar("audience", { length: 20 }).notNull().default("all"),
+  dueDate: date("due_date"),
+  /** Null while the request is still accepting answers. */
+  closedAt: timestamp("closed_at"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/** One question on a form request. */
+export const formRequestFields = pgTable("form_request_fields", {
+  id: serial("id").primaryKey(),
+  requestId: integer("request_id").notNull().references(() => formRequests.id, { onDelete: "cascade" }),
+  label: varchar("label", { length: 200 }).notNull(),
+  /** "text" | "number" | "date" | "select" */
+  type: varchar("type", { length: 20 }).notNull().default("text"),
+  required: boolean("required").notNull().default(true),
+  placeholder: varchar("placeholder", { length: 200 }),
+  /** JSON array of choices for select fields; null for other types. */
+  options: text("options"),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const formRequestAssignees = pgTable("form_request_assignees", {
+  id: serial("id").primaryKey(),
+  requestId: integer("request_id").notNull().references(() => formRequests.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+}, (table) => ({
+  requestUserUnique: uniqueIndex("form_request_assignee_unique").on(table.requestId, table.userId),
+}));
+
+/**
+ * One completed form per member per request. Re-submitting replaces the row,
+ * and the old values are deleted by the submissions handler.
+ */
+export const formSubmissions = pgTable("form_submissions", {
+  id: serial("id").primaryKey(),
+  requestId: integer("request_id").notNull().references(() => formRequests.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** "submitted" | "approved" | "rejected" */
+  status: varchar("status", { length: 20 }).notNull().default("submitted"),
+  reviewNote: text("review_note"),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+}, (table) => ({
+  requestUserUnique: uniqueIndex("form_submission_unique").on(table.requestId, table.userId),
+}));
+
+export const formSubmissionValues = pgTable("form_submission_values", {
+  id: serial("id").primaryKey(),
+  submissionId: integer("submission_id").notNull().references(() => formSubmissions.id, { onDelete: "cascade" }),
+  fieldId: integer("field_id").notNull().references(() => formRequestFields.id, { onDelete: "cascade" }),
+  value: text("value").notNull(),
+}, (table) => ({
+  submissionFieldUnique: uniqueIndex("form_submission_value_unique").on(table.submissionId, table.fieldId),
+}));
+
+/**
+ * Form requests referenced by an announcement, so a post can say "fill these
+ * in" and show the member their own status inline.
+ */
+export const announcementForms = pgTable("announcement_forms", {
+  id: serial("id").primaryKey(),
+  announcementId: integer("announcement_id").notNull().references(() => announcements.id, { onDelete: "cascade" }),
+  requestId: integer("request_id").notNull().references(() => formRequests.id, { onDelete: "cascade" }),
+}, (table) => ({
+  announcementRequestUnique: uniqueIndex("announcement_form_unique").on(table.announcementId, table.requestId),
+}));
+
+/**
+ * Files an admin attaches to an announcement, stored in the bucket. Unlike
+ * linked requests, these are reference material — a PDF to read or complete —
+ * not something members submit back.
+ */
+export const announcementFiles = pgTable("announcement_files", {
+  id: serial("id").primaryKey(),
+  announcementId: integer("announcement_id").notNull().references(() => announcements.id, { onDelete: "cascade" }),
+  storageKey: varchar("storage_key", { length: 500 }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+});
+
 export const attendance = pgTable("attendance", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -165,6 +260,83 @@ export const announcementsRelations = relations(announcements, ({ one, many }) =
     references: [users.id],
   }),
   documents: many(announcementDocuments),
+  forms: many(announcementForms),
+  files: many(announcementFiles),
+}));
+
+export const formRequestsRelations = relations(formRequests, ({ one, many }) => ({
+  author: one(users, {
+    fields: [formRequests.createdBy],
+    references: [users.id],
+  }),
+  fields: many(formRequestFields),
+  assignees: many(formRequestAssignees),
+  submissions: many(formSubmissions),
+  announcements: many(announcementForms),
+}));
+
+export const formRequestFieldsRelations = relations(formRequestFields, ({ one, many }) => ({
+  request: one(formRequests, {
+    fields: [formRequestFields.requestId],
+    references: [formRequests.id],
+  }),
+  values: many(formSubmissionValues),
+}));
+
+export const formRequestAssigneesRelations = relations(formRequestAssignees, ({ one }) => ({
+  request: one(formRequests, {
+    fields: [formRequestAssignees.requestId],
+    references: [formRequests.id],
+  }),
+  user: one(users, {
+    fields: [formRequestAssignees.userId],
+    references: [users.id],
+  }),
+}));
+
+export const formSubmissionsRelations = relations(formSubmissions, ({ one, many }) => ({
+  request: one(formRequests, {
+    fields: [formSubmissions.requestId],
+    references: [formRequests.id],
+  }),
+  user: one(users, {
+    fields: [formSubmissions.userId],
+    references: [users.id],
+  }),
+  reviewer: one(users, {
+    fields: [formSubmissions.reviewedBy],
+    references: [users.id],
+  }),
+  values: many(formSubmissionValues),
+}));
+
+export const formSubmissionValuesRelations = relations(formSubmissionValues, ({ one }) => ({
+  submission: one(formSubmissions, {
+    fields: [formSubmissionValues.submissionId],
+    references: [formSubmissions.id],
+  }),
+  field: one(formRequestFields, {
+    fields: [formSubmissionValues.fieldId],
+    references: [formRequestFields.id],
+  }),
+}));
+
+export const announcementFormsRelations = relations(announcementForms, ({ one }) => ({
+  announcement: one(announcements, {
+    fields: [announcementForms.announcementId],
+    references: [announcements.id],
+  }),
+  request: one(formRequests, {
+    fields: [announcementForms.requestId],
+    references: [formRequests.id],
+  }),
+}));
+
+export const announcementFilesRelations = relations(announcementFiles, ({ one }) => ({
+  announcement: one(announcements, {
+    fields: [announcementFiles.announcementId],
+    references: [announcements.id],
+  }),
 }));
 
 export const announcementDocumentsRelations = relations(announcementDocuments, ({ one }) => ({

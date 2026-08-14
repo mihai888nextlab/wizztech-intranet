@@ -1,5 +1,6 @@
 import { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import { format, parseISO } from "date-fns";
 import {
   CalendarClock,
@@ -17,6 +18,7 @@ import {
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { FieldsSection } from "@/components/documents/fields-section";
 import { FilePreviewDialog } from "@/components/documents/file-preview-dialog";
 import {
   documentStatusOf,
@@ -59,10 +61,11 @@ import {
 } from "@/lib/documents";
 import { MAX_SIZE_MB_LIMIT, TITLE_MAX } from "@/lib/file-requests";
 import { formatBytes } from "@/lib/format";
+import { formStatusOf, type FormRequest } from "@/lib/forms";
 import { cn } from "@/lib/utils";
 
-
 export default function DocumentsPage() {
+  const router = useRouter();
   const user = useUser();
   const [requests, setRequests] = useState<FileRequest[]>([]);
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -72,13 +75,32 @@ export default function DocumentsPage() {
   const [deleting, setDeleting] = useState<FileRequest | null>(null);
   const [previewing, setPreviewing] = useState<Submission | null>(null);
 
+  const [formRequests, setFormRequests] = useState<FormRequest[]>([]);
+  const [formLoading, setFormLoading] = useState(true);
+  const [formCreating, setFormCreating] = useState(false);
+  const [formEditing, setFormEditing] = useState<FormRequest | null>(null);
+  const [formDeleting, setFormDeleting] = useState<FormRequest | null>(null);
+
   const isAdmin = user?.role === "admin";
+
+  // The URL is the source of truth for the tab, so ?tab=fields links work.
+  const tab =
+    typeof router.query.tab === "string" && router.query.tab === "fields"
+      ? "fields"
+      : "files";
 
   useEffect(() => {
     fetch("/api/file-requests")
       .then((res) => (res.ok ? res.json() : []))
       .then(setRequests)
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/form-requests")
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setFormRequests)
+      .finally(() => setFormLoading(false));
   }, []);
 
   useEffect(() => {
@@ -89,6 +111,14 @@ export default function DocumentsPage() {
   }, [isAdmin]);
 
   if (!user) return <AuthLoading />;
+
+  const changeTab = (value: string) => {
+    router.replace(
+      value === "files" ? "/documents" : `/documents?tab=${value}`,
+      undefined,
+      { shallow: true }
+    );
+  };
 
   const handleDelete = async () => {
     if (!deleting) return;
@@ -118,9 +148,43 @@ export default function DocumentsPage() {
     toast.success(updated.closedAt ? "Request closed" : "Request reopened");
   };
 
-  const outstanding = requests.filter(
+  const handleFormDelete = async () => {
+    if (!formDeleting) return;
+    const res = await fetch(`/api/form-requests/${formDeleting.id}`, { method: "DELETE" });
+    if (res.ok) {
+      setFormRequests(formRequests.filter((r) => r.id !== formDeleting.id));
+      toast.success("Request deleted");
+    } else {
+      toast.error("Could not delete that request");
+    }
+  };
+
+  const toggleFormClosed = async (request: FormRequest) => {
+    const res = await fetch(`/api/form-requests/${request.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ closed: !request.closedAt }),
+    });
+    if (!res.ok) {
+      toast.error("Could not update that request");
+      return;
+    }
+    const updated = await res.json();
+    setFormRequests(
+      formRequests.map((r) =>
+        r.id === updated.id ? { ...r, closedAt: updated.closedAt } : r
+      )
+    );
+    toast.success(updated.closedAt ? "Request closed" : "Request reopened");
+  };
+
+  const outstandingFiles = requests.filter(
     (r) => !r.closedAt && documentStatusOf(r.mySubmission) !== "approved"
   ).length;
+  const outstandingForms = formRequests.filter(
+    (r) => !r.closedAt && formStatusOf(r.mySubmission) !== "approved"
+  ).length;
+  const outstanding = outstandingFiles + outstandingForms;
 
   return (
     <AppShell
@@ -128,98 +192,155 @@ export default function DocumentsPage() {
       title="Documents"
       description={
         isAdmin
-          ? "Ask the team for files and track who has handed them in."
+          ? "Ask the team for files or form answers and track who has handed them in."
           : outstanding > 0
-            ? `You have ${outstanding} file${outstanding === 1 ? "" : "s"} to hand in.`
-            : "Files requested from you."
+            ? `You have ${outstanding} item${outstanding === 1 ? "" : "s"} to complete.`
+            : "Files and forms requested from you."
       }
       action={
         isAdmin && (
-          <Button size="lg" onClick={() => setCreating(true)}>
+          <Button
+            size="lg"
+            onClick={() =>
+              tab === "fields" ? setFormCreating(true) : setCreating(true)
+            }
+          >
             <Plus /> New
           </Button>
         )
       }
     >
-      {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-36 w-full rounded-xl" />
-          ))}
-        </div>
-      ) : requests.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title={isAdmin ? "No requests yet" : "Nothing to hand in"}
-          description={
-            isAdmin
-              ? "Create a request to start collecting signed forms from the team."
-              : "When an admin asks for a document, it will appear here."
-          }
-          action={
-            isAdmin && (
-              <Button onClick={() => setCreating(true)}>
-                <Plus /> New request
-              </Button>
-            )
-          }
-        />
-      ) : (
-        <div className="space-y-3">
-          {requests.map((request) => (
-            <RequestCard
-              key={request.id}
-              request={request}
-              isAdmin={isAdmin}
-              onEdit={() => setEditing(request)}
-              onDelete={() => setDeleting(request)}
-              onToggleClosed={() => toggleClosed(request)}
-              onPreview={setPreviewing}
-              onSubmitted={(submission) =>
-                setRequests((prev) =>
-                  prev.map((r) =>
-                    r.id === request.id ? { ...r, mySubmission: submission } : r
-                  )
+      <Tabs value={tab} onValueChange={changeTab} className="gap-5">
+        <TabsList className="h-9 w-full sm:w-auto">
+          <TabsTrigger value="files" className="px-4">
+            Files
+          </TabsTrigger>
+          <TabsTrigger value="fields" className="px-4">
+            Fields
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="files">
+          {loading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-36 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : requests.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title={isAdmin ? "No file requests yet" : "Nothing to hand in"}
+              description={
+                isAdmin
+                  ? "Create a request to start collecting signed forms from the team."
+                  : "When an admin asks for a document, it will appear here."
+              }
+              action={
+                isAdmin && (
+                  <Button onClick={() => setCreating(true)}>
+                    <Plus /> New request
+                  </Button>
                 )
               }
             />
-          ))}
-        </div>
-      )}
+          ) : (
+            <div className="space-y-3">
+              {requests.map((request) => (
+                <RequestCard
+                  key={request.id}
+                  request={request}
+                  isAdmin={isAdmin}
+                  onEdit={() => setEditing(request)}
+                  onDelete={() => setDeleting(request)}
+                  onToggleClosed={() => toggleClosed(request)}
+                  onPreview={setPreviewing}
+                  onSubmitted={(submission) =>
+                    setRequests((prev) =>
+                      prev.map((r) =>
+                        r.id === request.id ? { ...r, mySubmission: submission } : r
+                      )
+                    )
+                  }
+                />
+              ))}
+            </div>
+          )}
 
-      {isAdmin && (
-        <RequestDialog
-          open={creating || editing !== null}
-          existing={editing}
-          members={members}
-          onOpenChange={(open) => {
-            if (!open) {
-              setCreating(false);
-              setEditing(null);
+          {isAdmin && (
+            <RequestDialog
+              open={creating || editing !== null}
+              existing={editing}
+              members={members}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setCreating(false);
+                  setEditing(null);
+                }
+              }}
+              onSaved={(saved) =>
+                setRequests((prev) =>
+                  prev.some((r) => r.id === saved.id)
+                    ? prev.map((r) => (r.id === saved.id ? { ...r, ...saved } : r))
+                    : [saved, ...prev]
+                )
+              }
+            />
+          )}
+
+          <FilePreviewDialog
+            submission={previewing}
+            onOpenChange={(open) => !open && setPreviewing(null)}
+          />
+
+          <ConfirmDialog
+            open={deleting !== null}
+            onOpenChange={(open) => !open && setDeleting(null)}
+            title={`Delete "${deleting?.title ?? ""}"?`}
+            description="Every file handed in for this request is permanently deleted from storage too. This cannot be undone."
+            onConfirm={handleDelete}
+          />
+        </TabsContent>
+
+        <TabsContent value="fields">
+          <FieldsSection
+            isAdmin={isAdmin}
+            members={members}
+            requests={formRequests}
+            loading={formLoading}
+            creating={formCreating}
+            editing={formEditing}
+            deleting={formDeleting}
+            onCreateChange={(open) => {
+              if (!open) {
+                setFormCreating(false);
+                setFormEditing(null);
+              }
+            }}
+            onDeleteChange={(open) => !open && setFormDeleting(null)}
+            onEdit={setFormEditing}
+            onDelete={setFormDeleting}
+            onSaved={(saved, isNew) =>
+              setFormRequests((prev) =>
+                prev.some((r) => r.id === saved.id)
+                  ? prev.map((r) => (r.id === saved.id ? { ...r, ...saved } : r))
+                  : isNew
+                    ? [saved, ...prev]
+                    : prev
+              )
             }
-          }}
-          onSaved={(saved) =>
-            setRequests((prev) =>
-              prev.some((r) => r.id === saved.id)
-                ? prev.map((r) => (r.id === saved.id ? { ...r, ...saved } : r))
-                : [saved, ...prev]
-            )
-          }
-        />
-      )}
-
-      <FilePreviewDialog
-        submission={previewing}
-        onOpenChange={(open) => !open && setPreviewing(null)}
-      />
-
-      <ConfirmDialog
-        open={deleting !== null}
-        onOpenChange={(open) => !open && setDeleting(null)}
-        title={`Delete "${deleting?.title ?? ""}"?`}
-        description="Every file handed in for this request is permanently deleted from storage too. This cannot be undone."
-        onConfirm={handleDelete}
-      />
+            onDeleted={handleFormDelete}
+            onToggleClosed={toggleFormClosed}
+            onSubmitted={(request, submission) =>
+              setFormRequests((prev) =>
+                prev.map((r) =>
+                  r.id === request.id ? { ...r, mySubmission: submission } : r
+                )
+              )
+            }
+          />
+        </TabsContent>
+      </Tabs>
     </AppShell>
   );
 }
