@@ -21,6 +21,7 @@ import {
 } from "@/lib/announcement-files";
 import { parseAnnouncementInput } from "@/lib/announcements";
 import { getSession } from "@/lib/auth";
+import { notifyNewAnnouncement } from "@/lib/push-events";
 import { db } from "@/lib/db";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -79,6 +80,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       forms: [],
       files: [],
     };
+
+    // Awaited, not fire-and-forget: Vercel may freeze the function the moment
+    // the response is flushed. Failures are swallowed inside sendPushToUsers,
+    // so a dead push service can never cost us the announcement.
+    await notifyNewAnnouncement({
+      id: created.id,
+      title: created.title,
+      description: created.description,
+      authorId: session.userId,
+      authorName: session.fullName,
+    });
 
     return res.status(201).json({
       ...announcement,

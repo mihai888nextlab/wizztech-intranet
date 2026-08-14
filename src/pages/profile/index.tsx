@@ -6,6 +6,7 @@ import { CalendarDays, LogOut, Moon, Sun, Timer } from "lucide-react";
 
 import { AppShell, AuthLoading } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/empty-state";
+import { NotificationsCard } from "@/components/notifications-card";
 import { ListCard, ListRow } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -180,6 +181,8 @@ export default function ProfilePage() {
             )}
           </TabsContent>
         </Tabs>
+
+        <NotificationsCard />
 
         <AppearanceCard />
 

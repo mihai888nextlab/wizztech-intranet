@@ -5,6 +5,7 @@ import { formSubmissions } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseReviewInput } from "@/lib/file-requests";
+import { notifySubmissionReviewed } from "@/lib/push-events";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getSession(req, res);
@@ -43,6 +44,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
       .where(eq(formSubmissions.id, id))
       .returning();
+
+    const request = await db.query.formRequests.findFirst({
+      where: (r, { eq: matches }) => matches(r.id, updated.requestId),
+      columns: { id: true, title: true },
+    });
+    await notifySubmissionReviewed({
+      ownerId: updated.userId,
+      requestTitle: request?.title ?? "Your form",
+      status: updated.status,
+      reviewNote: updated.reviewNote,
+      url: `/forms/${updated.requestId}`,
+    });
 
     return res.status(200).json(updated);
   }

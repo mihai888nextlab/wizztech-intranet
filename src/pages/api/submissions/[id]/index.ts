@@ -5,6 +5,7 @@ import { fileSubmissions } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseReviewInput } from "@/lib/file-requests";
+import { notifySubmissionReviewed } from "@/lib/push-events";
 import { deleteObject } from "@/lib/storage";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -47,6 +48,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
       .where(eq(fileSubmissions.id, id))
       .returning();
+
+    const request = await db.query.fileRequests.findFirst({
+      where: (r, { eq: matches }) => matches(r.id, updated.requestId),
+      columns: { id: true, title: true },
+    });
+    await notifySubmissionReviewed({
+      ownerId: updated.userId,
+      requestTitle: request?.title ?? "Your document",
+      status: updated.status,
+      reviewNote: updated.reviewNote,
+      url: `/documents/${updated.requestId}`,
+    });
 
     return res.status(200).json(updated);
   }

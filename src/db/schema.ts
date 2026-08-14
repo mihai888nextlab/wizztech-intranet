@@ -198,6 +198,25 @@ export const attendance = pgTable("attendance", {
   userEventUnique: uniqueIndex("user_event_unique").on(table.userId, table.eventId),
 }));
 
+/**
+ * One row per browser, not per person: a member with a phone and a laptop has
+ * two, and both get notified. The row's existence is the preference — turning
+ * notifications off deletes it, so there is no separate settings table.
+ */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** Push service URLs run long, so text rather than varchar. */
+  endpoint: text("endpoint").notNull(),
+  p256dh: varchar("p256dh", { length: 255 }).notNull(),
+  auth: varchar("auth", { length: 255 }).notNull(),
+  userAgent: varchar("user_agent", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+}, (table) => ({
+  endpointUnique: uniqueIndex("push_subscription_endpoint_unique").on(table.endpoint),
+}));
+
 export const labSessions = pgTable("lab_sessions", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
