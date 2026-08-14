@@ -100,6 +100,17 @@ export function NotificationsCard() {
         </p>
       )}
 
+      {state === "insecure" && (
+        <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          Notifications need a secure connection. This page is on plain{" "}
+          <code className="font-mono">http://</code>, so the browser blocks them
+          entirely. They work on <code className="font-mono">localhost</code> and
+          on the deployed <code className="font-mono">https://</code> site — but
+          not on a local network address like{" "}
+          <code className="font-mono">192.168.x.x</code>.
+        </p>
+      )}
+
       {state === "unsupported" && (
         <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
           This browser doesn&apos;t support notifications. Chrome, Firefox or Edge
@@ -111,6 +122,15 @@ export function NotificationsCard() {
         <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
           Notifications aren&apos;t set up on the server yet. An admin needs to add
           the VAPID keys.
+        </p>
+      )}
+
+      {state === "bad-key" && (
+        <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          The server&apos;s notification key is malformed, so the browser rejects
+          it. Check <code className="font-mono">VAPID_PUBLIC_KEY</code> in the
+          hosting environment — the usual cause is pasting it with the
+          surrounding quotes or a trailing space.
         </p>
       )}
 

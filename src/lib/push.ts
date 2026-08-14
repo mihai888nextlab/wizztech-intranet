@@ -24,16 +24,41 @@ export interface WebPushSubscription {
   keys: { p256dh: string; auth: string };
 }
 
+/**
+ * Reads an env var defensively.
+ *
+ * .env files have their quotes stripped by dotenv, but hosting dashboards store
+ * exactly what you paste — so a value copied out of .env with its surrounding
+ * quotes arrives here as `"BN..."`. That decodes to a malformed key and the
+ * browser's push service rejects the subscription with a generic
+ * "push service error", which points nowhere near the real cause.
+ */
+function readEnv(name: string): string {
+  return (process.env[name] ?? "").trim().replace(/^['"]|['"]$/g, "");
+}
+
+/** A VAPID public key is an uncompressed P-256 point: 65 bytes starting 0x04. */
+export function isValidVapidPublicKey(key: string): boolean {
+  if (!/^[A-Za-z0-9_-]+$/.test(key)) return false;
+  try {
+    const bytes = Buffer.from(key, "base64url");
+    return bytes.length === 65 && bytes[0] === 0x04;
+  } catch {
+    return false;
+  }
+}
+
 export function isPushConfigured() {
   return Boolean(
-    process.env.VAPID_PUBLIC_KEY &&
-      process.env.VAPID_PRIVATE_KEY &&
-      process.env.VAPID_SUBJECT
+    readEnv("VAPID_PUBLIC_KEY") &&
+      readEnv("VAPID_PRIVATE_KEY") &&
+      readEnv("VAPID_SUBJECT")
   );
 }
 
 export function vapidPublicKey() {
-  return process.env.VAPID_PUBLIC_KEY ?? null;
+  const key = readEnv("VAPID_PUBLIC_KEY");
+  return key || null;
 }
 
 function clamp(value: string, max: number) {
@@ -85,9 +110,9 @@ export async function buildRequestDetails(
 ) {
   const webpush = (await import("web-push")).default;
   webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT!,
-    process.env.VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!
+    readEnv("VAPID_SUBJECT"),
+    readEnv("VAPID_PUBLIC_KEY"),
+    readEnv("VAPID_PRIVATE_KEY")
   );
   return webpush.generateRequestDetails(
     subscription,

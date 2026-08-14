@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
 import { getSession } from "@/lib/auth";
-import { isPushConfigured, vapidPublicKey } from "@/lib/push";
+import { isPushConfigured, isValidVapidPublicKey, vapidPublicKey } from "@/lib/push";
 
 /**
  * The browser needs the VAPID public key to subscribe. Serving it here keeps
@@ -19,7 +19,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (!isPushConfigured()) {
-    return res.status(200).json({ configured: false });
+    return res.status(200).json({ configured: false, reason: "missing" });
   }
-  return res.status(200).json({ configured: true, publicKey: vapidPublicKey() });
+
+  const publicKey = vapidPublicKey()!;
+  if (!isValidVapidPublicKey(publicKey)) {
+    // Report it here rather than letting the browser fail later with an error
+    // that names the push service instead of the real problem.
+    return res.status(200).json({
+      configured: false,
+      reason: "malformed",
+      keyLength: publicKey.length,
+    });
+  }
+
+  return res.status(200).json({ configured: true, publicKey });
 }

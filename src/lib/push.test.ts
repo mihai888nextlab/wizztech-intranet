@@ -6,6 +6,7 @@ import webpush from "web-push";
 import {
   buildPayload,
   buildRequestDetails,
+  isValidVapidPublicKey,
   PUSH_BODY_MAX,
   PUSH_TITLE_MAX,
   PUSH_TTL_SECONDS,
@@ -179,5 +180,34 @@ describe("the request we actually send", () => {
     );
     assert.equal(result.ok, false);
     assert.equal(result.prune, false);
+  });
+});
+
+describe("isValidVapidPublicKey", () => {
+  it("accepts a freshly generated key", () => {
+    assert.equal(isValidVapidPublicKey(webpush.generateVAPIDKeys().publicKey), true);
+  });
+
+  it("rejects a key pasted with its surrounding quotes", () => {
+    // The exact shape of a value copied out of a .env file into a hosting
+    // dashboard, which stores punctuation verbatim.
+    const key = webpush.generateVAPIDKeys().publicKey;
+    assert.equal(isValidVapidPublicKey(`"${key}"`), false);
+    assert.equal(isValidVapidPublicKey(`'${key}'`), false);
+  });
+
+  it("rejects whitespace, standard base64 and the wrong length", () => {
+    const key = webpush.generateVAPIDKeys().publicKey;
+    assert.equal(isValidVapidPublicKey(` ${key}`), false);
+    assert.equal(isValidVapidPublicKey(`${key}\n`), false);
+    // Standard base64 rather than base64url — + and / are not valid here.
+    assert.equal(isValidVapidPublicKey(Buffer.from(key, "base64url").toString("base64")), false);
+    assert.equal(isValidVapidPublicKey(key.slice(0, 40)), false);
+    assert.equal(isValidVapidPublicKey(""), false);
+  });
+
+  it("rejects a 65-byte value that is not an uncompressed point", () => {
+    const bogus = Buffer.alloc(65, 1); // first byte must be 0x04
+    assert.equal(isValidVapidPublicKey(bogus.toString("base64url")), false);
   });
 });
