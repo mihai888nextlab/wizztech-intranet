@@ -1,24 +1,24 @@
-"use client";
-
 import { useState, useEffect } from "react";
-import { useRouter } from "next/router";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Navbar } from "@/components/layout/navbar";
-import { PageLayout } from "@/components/layout/page-layout";
-import { Calendar, MapPin, Clock, Plus, Loader2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { CalendarDays, Clock, MapPin, Plus } from "lucide-react";
 
-interface User {
-  userId: number;
-  fullName: string;
-  username: string;
-  role: string;
-}
+import { AppShell, AuthLoading } from "@/components/layout/app-shell";
+import { EmptyState } from "@/components/empty-state";
+import { StatusBadge } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useUser } from "@/hooks/use-user";
+import {
+  eventStatus,
+  formatDateRange,
+  formatTime,
+  todayISO,
+} from "@/lib/format";
+import { isOrganizer } from "@/lib/nav";
 
-interface Event {
+interface EventRecord {
   id: number;
   title: string;
   description: string | null;
@@ -27,129 +27,162 @@ interface Event {
   startTime: string;
   endTime: string;
   location: string | null;
-  createdBy: number;
-  createdAt: string;
 }
 
 export default function EventsPage() {
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [events, setEvents] = useState<Event[]>([]);
+  const user = useUser();
+  const [events, setEvents] = useState<EventRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/auth/me").then((res) => {
-      if (!res.ok) router.push("/");
-      else res.json().then(setUser);
-    });
-  }, [router]);
-
-  useEffect(() => {
-    fetch("/api/events").then((res) => {
-      if (res.ok) res.json().then(setEvents);
-    }).finally(() => setLoading(false));
+    fetch("/api/events")
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setEvents)
+      .finally(() => setLoading(false));
   }, []);
 
-  if (!user) return null;
+  if (!user) return <AuthLoading />;
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const upcoming = events.filter((e) => e.endDate >= today);
-  const past = events.filter((e) => e.endDate < today);
-
-  const canCreate = user.role === "admin" || user.role === "organizer";
+  const past = events.filter((e) => e.endDate < today).reverse();
 
   return (
-    <>
-      <Navbar user={user} />
-      <PageLayout title="Events" description="Upcoming team events and activities">
-        <div className="flex justify-end">
-          {canCreate && (
-            <Button onClick={() => router.push("/dashboard?tab=events")}>
-              <Plus /> New Event
-            </Button>
+    <AppShell
+      user={user}
+      title="Events"
+      description="Competitions, meetings and workshops."
+      action={
+        isOrganizer(user.role) && (
+          <Button
+            size="lg"
+            nativeButton={false}
+            render={<Link href="/dashboard?tab=events" />}
+          >
+            <Plus /> New
+          </Button>
+        )
+      }
+    >
+      <Tabs defaultValue="upcoming" className="gap-5">
+        <TabsList className="h-9 w-full sm:w-auto">
+          <TabsTrigger value="upcoming" className="px-4">
+            Upcoming
+            <span className="text-muted-foreground tabular-nums">
+              {upcoming.length}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="past" className="px-4">
+            Past
+            <span className="text-muted-foreground tabular-nums">
+              {past.length}
+            </span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="upcoming">
+          {loading ? (
+            <EventGridSkeleton />
+          ) : upcoming.length === 0 ? (
+            <EmptyState
+              icon={CalendarDays}
+              title="No upcoming events"
+              description="Nothing on the calendar yet. Check back soon."
+            />
+          ) : (
+            <EventGrid events={upcoming} />
           )}
-        </div>
+        </TabsContent>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="space-y-8">
-            <section>
-              <h2 className="text-lg font-semibold mb-3">Upcoming</h2>
-              {upcoming.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No upcoming events.</p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {upcoming.map((event) => (
-                    <EventCard key={event.id} event={event} />
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {past.length > 0 && (
-              <section>
-                <h2 className="text-lg font-semibold mb-3">Past Events</h2>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {past.map((event) => (
-                    <EventCard key={event.id} event={event} />
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
-      </PageLayout>
-    </>
+        <TabsContent value="past">
+          {loading ? (
+            <EventGridSkeleton />
+          ) : past.length === 0 ? (
+            <EmptyState
+              icon={CalendarDays}
+              title="No past events"
+              description="Events show up here once they have wrapped."
+            />
+          ) : (
+            <EventGrid events={past} />
+          )}
+        </TabsContent>
+      </Tabs>
+    </AppShell>
   );
 }
 
-function formatDateRange(startDate: string, endDate: string) {
-  if (startDate === endDate) {
-    return format(parseISO(startDate), "EEE, MMM d, yyyy");
-  }
-  const start = parseISO(startDate);
-  const end = parseISO(endDate);
-  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
-    return `${format(start, "MMM d")} - ${format(end, "d, yyyy")}`;
-  }
-  return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
+function EventGrid({ events }: { events: EventRecord[] }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {events.map((event) => (
+        <EventCard key={event.id} event={event} />
+      ))}
+    </div>
+  );
 }
 
-function EventCard({ event }: { event: Event }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const isOngoing = event.startDate <= today && event.endDate >= today;
-  const isPast = event.endDate < today;
+function EventCard({ event }: { event: EventRecord }) {
+  const status = eventStatus(event.startDate, event.endDate);
+  const start = parseISO(event.startDate);
+  const multiDay = event.startDate !== event.endDate;
 
   return (
-    <Link href={`/events/${event.id}`}>
-      <Card className="h-full transition-colors hover:bg-accent/50 cursor-pointer">
-        <CardHeader className="pb-2">
-          <div className="flex items-start justify-between gap-2">
-            <CardTitle className="text-base">{event.title}</CardTitle>
-            {isOngoing && <Badge variant="default">Ongoing</Badge>}
-            {isPast && <Badge variant="secondary">Past</Badge>}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-1.5 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5" />
-            <span>{formatDateRange(event.startDate, event.endDate)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="h-3.5 w-3.5" />
-            <span>{event.startTime.slice(0, 5)} - {event.endTime.slice(0, 5)}</span>
-          </div>
+    <Link
+      href={`/events/${event.id}`}
+      className="group flex gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10 transition-all outline-none hover:ring-foreground/20 focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px"
+    >
+      <div className="flex size-12 shrink-0 flex-col items-center justify-center rounded-lg bg-muted text-center">
+        <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+          {format(start, "MMM")}
+        </span>
+        <span className="font-heading text-lg leading-none font-semibold tabular-nums">
+          {format(start, "d")}
+        </span>
+      </div>
+
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-heading leading-snug font-medium text-pretty transition-colors group-hover:text-primary">
+            {event.title}
+          </h3>
+          <StatusBadge status={status} />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <Clock className="size-3.5" />
+            {multiDay
+              ? formatDateRange(event.startDate, event.endDate)
+              : `${formatTime(event.startTime)} – ${formatTime(event.endTime)}`}
+          </span>
           {event.location && (
-            <div className="flex items-center gap-2">
-              <MapPin className="h-3.5 w-3.5" />
-              <span>{event.location}</span>
-            </div>
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <MapPin className="size-3.5 shrink-0" />
+              <span className="truncate">{event.location}</span>
+            </span>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </Link>
+  );
+}
+
+function EventGridSkeleton() {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10"
+        >
+          <Skeleton className="size-12 shrink-0 rounded-lg" />
+          <div className="flex-1 space-y-2 py-0.5">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

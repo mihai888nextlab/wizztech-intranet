@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { db } from "@/lib/db";
-import { users } from "@/db/schema";
+import { fileSubmissions, users } from "@/db/schema";
 import { requireAuth } from "@/lib/auth";
+import { deleteObjects } from "@/lib/storage";
 import { eq } from "drizzle-orm";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -16,6 +17,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "DELETE") {
+    // Deleting the row cascades their submissions, but not the stored files.
+    const submitted = await db
+      .select({ storageKey: fileSubmissions.storageKey })
+      .from(fileSubmissions)
+      .where(eq(fileSubmissions.userId, id));
+    await deleteObjects(submitted.map((s) => s.storageKey));
+
     await db.delete(users).where(eq(users.id, id));
     return res.status(200).json({ success: true });
   }

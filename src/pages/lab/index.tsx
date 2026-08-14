@@ -1,27 +1,29 @@
-"use client";
-
-import { useState, useEffect, FormEvent } from "react";
-import { useRouter } from "next/router";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Navbar } from "@/components/layout/navbar";
-import { PageLayout } from "@/components/layout/page-layout";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Clock, Play, Square, Plus, Loader2 } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { useState, useEffect, useCallback, FormEvent } from "react";
+import { format, parseISO, startOfWeek } from "date-fns";
+import { CalendarPlus, Play, Square, Timer } from "lucide-react";
 import { toast } from "sonner";
 
-interface User {
-  userId: number;
-  fullName: string;
-  username: string;
-  role: string;
-}
+import { AppShell, AuthLoading } from "@/components/layout/app-shell";
+import { EmptyState } from "@/components/empty-state";
+import { ListCard, ListRow, Section } from "@/components/section";
+import { StatCard } from "@/components/stat-card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
+import { useUser } from "@/hooks/use-user";
+import { formatDuration, todayISO } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface LabSession {
   id: number;
@@ -32,78 +34,76 @@ interface LabSession {
   note: string | null;
 }
 
+function elapsedSince(iso: string) {
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+  const h = Math.floor(diff / 3_600_000);
+  const m = Math.floor((diff % 3_600_000) / 60_000);
+  const s = Math.floor((diff % 60_000) / 1000);
+  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
 export default function LabPage() {
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const user = useUser();
   const [sessions, setSessions] = useState<LabSession[]>([]);
-  const [activeSession, setActiveSession] = useState<LabSession | null>(null);
+  const [active, setActive] = useState<LabSession | null>(null);
+  const [totalMinutes, setTotalMinutes] = useState(0);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
-  const [totalHours, setTotalHours] = useState(0);
+  const [elapsed, setElapsed] = useState("00:00:00");
+  const [timedSessionId, setTimedSessionId] = useState<number | null>(null);
 
-  // Manual entry form
-  const [manualOpen, setManualOpen] = useState(false);
-  const [manualDate, setManualDate] = useState(new Date().toISOString().slice(0, 10));
-  const [manualStart, setManualStart] = useState("09:00");
-  const [manualEnd, setManualEnd] = useState("17:00");
-  const [manualNote, setManualNote] = useState("");
-  const [manualLoading, setManualLoading] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/auth/me").then((res) => {
-      if (!res.ok) router.push("/");
-      else res.json().then(setUser);
-    });
-  }, [router]);
-
-  const loadData = () => {
-    Promise.all([
-      fetch("/api/lab").then((r) => r.ok ? r.json() : []),
-      fetch("/api/lab/active").then((r) => r.ok ? r.json() : { active: false, session: null }),
-      fetch("/api/lab/hours").then((r) => r.ok ? r.json() : { totalMinutes: 0 }),
-    ]).then(([sessions, active, hours]) => {
-      setSessions(sessions);
-      setActiveSession(active.session);
-      setTotalHours(hours.totalMinutes);
-    }).finally(() => setLoading(false));
-  };
+  const loadData = useCallback(() => {
+    return Promise.all([
+      fetch("/api/lab").then((r) => (r.ok ? r.json() : [])),
+      fetch("/api/lab/active").then((r) =>
+        r.ok ? r.json() : { session: null }
+      ),
+      fetch("/api/lab/hours").then((r) => (r.ok ? r.json() : { totalMinutes: 0 })),
+    ])
+      .then(([list, activeRes, hours]) => {
+        setSessions(list);
+        setActive(activeRes.session);
+        setTotalMinutes(Number(hours.totalMinutes) || 0);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
-
-  const [elapsed, setElapsed] = useState("00:00:00");
+  }, [loadData]);
 
   useEffect(() => {
-    if (!activeSession) return;
-    const interval = setInterval(() => {
-      const diff = Date.now() - new Date(activeSession.checkIn).getTime();
-      const h = Math.floor(diff / 3600000).toString().padStart(2, "0");
-      const m = Math.floor((diff % 3600000) / 60000).toString().padStart(2, "0");
-      const s = Math.floor((diff % 60000) / 1000).toString().padStart(2, "0");
-      setElapsed(`${h}:${m}:${s}`);
-    }, 1000);
+    if (!active) return;
+    const interval = setInterval(
+      () => setElapsed(elapsedSince(active.checkIn)),
+      1000
+    );
     return () => clearInterval(interval);
-  }, [activeSession]);
+  }, [active]);
 
-  if (!user) return null;
+  // Show the right time on the first frame instead of waiting a full tick.
+  if (active && active.id !== timedSessionId) {
+    setTimedSessionId(active.id);
+    setElapsed(elapsedSince(active.checkIn));
+  }
+
+  if (!user) return <AuthLoading />;
 
   const handleToggle = async () => {
     setToggling(true);
     try {
-      const action = activeSession ? "check_out" : "check_in";
       const res = await fetch("/api/lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action: active ? "check_out" : "check_in" }),
       });
-      if (res.ok) {
-        toast.success(activeSession ? "Checked out!" : "Checked in!");
-        loadData();
-      } else {
+      if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed");
+        toast.error(data.error || "Could not update the timer");
+        return;
       }
+      toast.success(active ? "Checked out" : "Timer started");
+      await loadData();
     } catch {
       toast.error("Connection error");
     } finally {
@@ -111,180 +111,252 @@ export default function LabPage() {
     }
   };
 
-  const handleManualSubmit = async (e: FormEvent) => {
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekMinutes = sessions
+    .filter((s) => new Date(s.checkIn) >= weekStart)
+    .reduce((sum, s) => sum + (s.durationMinutes ?? 0), 0);
+
+  return (
+    <AppShell
+      user={user}
+      title="Lab Hours"
+      description="Track the time you spend building."
+      action={<ManualEntryDialog onSaved={loadData} />}
+    >
+      <div className="space-y-6">
+        <TimerCard
+          active={active}
+          elapsed={elapsed}
+          toggling={toggling}
+          onToggle={handleToggle}
+        />
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard label="All time" value={formatDuration(totalMinutes)} />
+          <StatCard label="This week" value={formatDuration(weekMinutes)} />
+          <StatCard
+            label="Sessions"
+            value={sessions.length}
+            className="col-span-2 sm:col-span-1"
+          />
+        </div>
+
+        <Section title="History" count={loading ? undefined : sessions.length}>
+          {loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : sessions.length === 0 ? (
+            <EmptyState
+              icon={Timer}
+              title="No sessions yet"
+              description="Check in when you arrive at the lab, or add a past session manually."
+            />
+          ) : (
+            <ListCard>
+              {sessions.map((s) => (
+                <ListRow key={s.id} className="gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">
+                        {format(parseISO(s.checkIn), "EEE, MMM d")}
+                      </p>
+                      {!s.checkOut && (
+                        <Badge className="gap-1.5 bg-success/12 text-success">
+                          <span
+                            className="size-1.5 rounded-full bg-current"
+                            aria-hidden="true"
+                          />
+                          Active
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {format(parseISO(s.checkIn), "HH:mm")} –{" "}
+                      {s.checkOut ? format(parseISO(s.checkOut), "HH:mm") : "now"}
+                      {s.note && ` · ${s.note}`}
+                    </p>
+                  </div>
+                  <span className="shrink-0 font-heading text-sm font-medium tabular-nums">
+                    {s.durationMinutes !== null
+                      ? formatDuration(s.durationMinutes)
+                      : "—"}
+                  </span>
+                </ListRow>
+              ))}
+            </ListCard>
+          )}
+        </Section>
+      </div>
+    </AppShell>
+  );
+}
+
+function TimerCard({
+  active,
+  elapsed,
+  toggling,
+  onToggle,
+}: {
+  active: LabSession | null;
+  elapsed: string;
+  toggling: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl p-6 text-center ring-1 transition-colors sm:p-8",
+        active
+          ? "bg-primary/6 ring-primary/25"
+          : "bg-card ring-foreground/10"
+      )}
+    >
+      <p className="inline-flex items-center gap-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {active && (
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
+            <span className="relative inline-flex size-2 rounded-full bg-success" />
+          </span>
+        )}
+        {active ? "Checked in" : "Lab timer"}
+      </p>
+
+      <p
+        className={cn(
+          "mt-4 font-heading font-semibold tracking-tight tabular-nums",
+          active
+            ? "text-5xl text-foreground sm:text-6xl"
+            : "text-4xl text-muted-foreground/50 sm:text-5xl"
+        )}
+      >
+        {active ? elapsed : "00:00:00"}
+      </p>
+
+      <p className="mt-2 text-sm text-muted-foreground">
+        {active
+          ? `Since ${format(parseISO(active.checkIn), "HH:mm")}`
+          : "Start the clock when you get to the lab"}
+      </p>
+
+      <Button
+        size="lg"
+        variant={active ? "outline" : "default"}
+        className="mt-6 h-12 w-full rounded-xl text-[15px] sm:w-56"
+        onClick={onToggle}
+        disabled={toggling}
+      >
+        {toggling ? <Spinner /> : active ? <Square /> : <Play />}
+        {active ? "Check out" : "Check in"}
+      </Button>
+    </div>
+  );
+}
+
+function ManualEntryDialog({ onSaved }: { onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState(todayISO());
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("17:00");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setManualLoading(true);
+    setSaving(true);
     try {
       const res = await fetch("/api/lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "manual",
-          checkIn: `${manualDate}T${manualStart}:00`,
-          checkOut: `${manualDate}T${manualEnd}:00`,
-          note: manualNote || undefined,
+          checkIn: `${date}T${start}:00`,
+          checkOut: `${date}T${end}:00`,
+          note: note || undefined,
         }),
       });
-      if (res.ok) {
-        toast.success("Lab session recorded!");
-        setManualOpen(false);
-        setManualNote("");
-        loadData();
-      } else {
+      if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed");
+        toast.error(data.error || "Could not save the session");
+        return;
       }
+      toast.success("Session recorded");
+      setOpen(false);
+      setNote("");
+      onSaved();
     } catch {
       toast.error("Connection error");
     } finally {
-      setManualLoading(false);
+      setSaving(false);
     }
   };
 
-  const formatDuration = (minutes: number) => {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return `${h}h ${m}m`;
-  };
-
   return (
-    <>
-      <Navbar user={user} />
-      <PageLayout title="Lab Hours" description="Track your time in the lab building the robot">
-        <div className="grid gap-6 md:grid-cols-3">
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                {activeSession ? "Active Session" : "No Active Session"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {activeSession && (
-                <div className="text-center py-4">
-                  <div className="text-4xl font-mono font-bold tracking-wider tabular-nums">
-                    {elapsed}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Since {format(parseISO(activeSession.checkIn), "h:mm a")}
-                  </p>
-                </div>
-              )}
-              <Button
-                size="lg"
-                variant={activeSession ? "destructive" : "default"}
-                className="w-full"
-                onClick={handleToggle}
-                disabled={toggling}
-              >
-                {toggling ? (
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                ) : activeSession ? (
-                  <Square className="mr-2 h-5 w-5" />
-                ) : (
-                  <Play className="mr-2 h-5 w-5" />
-                )}
-                {activeSession ? "Check Out" : "Check In"}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Total Hours</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{formatDuration(totalHours)}</div>
-              <p className="text-sm text-muted-foreground mt-1">
-                Across {sessions.length} session{sessions.length !== 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="flex justify-end">
-          <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-            <DialogTrigger>
-                <Button variant="outline">
-                  <Plus /> Manual Entry
-                </Button>
-              </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Lab Session Manually</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleManualSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="manualDate">Date</Label>
-                  <Input id="manualDate" type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} required />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="manualStart">Start Time</Label>
-                    <Input id="manualStart" type="time" value={manualStart} onChange={(e) => setManualStart(e.target.value)} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="manualEnd">End Time</Label>
-                    <Input id="manualEnd" type="time" value={manualEnd} onChange={(e) => setManualEnd(e.target.value)} required />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="manualNote">Note (optional)</Label>
-                  <Textarea id="manualNote" value={manualNote} onChange={(e) => setManualNote(e.target.value)} placeholder="What did you work on?" />
-                </div>
-                <Button type="submit" className="w-full" disabled={manualLoading}>
-                  {manualLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Save Session
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : sessions.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No lab sessions recorded yet.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Check In</TableHead>
-                    <TableHead>Check Out</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Note</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sessions.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell>{format(parseISO(s.checkIn), "MMM d, yyyy")}</TableCell>
-                      <TableCell>{format(parseISO(s.checkIn), "h:mm a")}</TableCell>
-                      <TableCell>
-                        {s.checkOut ? format(parseISO(s.checkOut), "h:mm a") : <Badge variant="outline">Active</Badge>}
-                      </TableCell>
-                      <TableCell className="font-mono tabular-nums">
-                        {s.durationMinutes ? formatDuration(s.durationMinutes) : "-"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground max-w-[150px] truncate">
-                        {s.note || "-"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </PageLayout>
-    </>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" size="lg" />}>
+        <CalendarPlus /> Add
+      </DialogTrigger>
+      <DialogContent className="gap-5">
+        <DialogHeader>
+          <DialogTitle>Add a past session</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="date">Date</Label>
+            <Input
+              id="date"
+              type="date"
+              className="h-10"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="start">Start</Label>
+              <Input
+                id="start"
+                type="time"
+                className="h-10"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end">End</Label>
+              <Input
+                id="end"
+                type="time"
+                className="h-10"
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="note">Note</Label>
+            <Textarea
+              id="note"
+              placeholder="What did you work on?"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
+          <Button
+            type="submit"
+            className="h-10 w-full rounded-xl"
+            disabled={saving}
+          >
+            {saving && <Spinner />}
+            Save session
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

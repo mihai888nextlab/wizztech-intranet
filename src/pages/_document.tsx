@@ -2,9 +2,10 @@ import { Html, Head, Main, NextScript } from "next/document";
 
 export default function Document() {
   return (
-    <Html lang="en">
+    // next-themes writes the theme class here before paint.
+    <Html lang="en" suppressHydrationWarning>
       <Head />
-      <body className="antialiased">
+      <body>
         <Main />
         <NextScript />
       </body>

@@ -1,0 +1,17 @@
+# If your existing proxy is Caddy, this is all you need.
+#
+# Caddy's defaults are already correct for MinIO where nginx's are not: it
+# preserves the incoming Host header (which SigV4 signs), streams request
+# bodies instead of buffering them, imposes no body size limit, and turns on
+# HTTP/2 and TLS session resumption by itself.
+
+s3.example.com {
+	reverse_proxy 127.0.0.1:9000
+
+	# Do NOT add header directives for Access-Control-*. MinIO emits CORS
+	# headers itself; duplicates make the browser reject the upload.
+}
+
+console.example.com {
+	reverse_proxy 127.0.0.1:9001
+}

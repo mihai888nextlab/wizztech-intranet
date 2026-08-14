@@ -1,26 +1,30 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Navbar } from "@/components/layout/navbar";
-import { PageLayout } from "@/components/layout/page-layout";
-import { Calendar, MapPin, Clock, ArrowLeft, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { CalendarDays, Check, Clock, MapPin, Share2, Users, X } from "lucide-react";
 import { toast } from "sonner";
 
-interface User {
-  userId: number;
-  fullName: string;
-  username: string;
-  role: string;
-}
+import { AppShell, AuthLoading } from "@/components/layout/app-shell";
+import { EmptyState } from "@/components/empty-state";
+import { ShareDialog } from "@/components/share-dialog";
+import { ListCard, ListRow, Section } from "@/components/section";
+import { StatusBadge } from "@/components/status-badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { useUser } from "@/hooks/use-user";
+import {
+  eventStatus,
+  formatDateRange,
+  formatTime,
+  initialsOf,
+} from "@/lib/format";
+import { isOrganizer } from "@/lib/nav";
+import { eventShareText } from "@/lib/share";
+import { cn } from "@/lib/utils";
 
-interface Event {
+interface EventRecord {
   id: number;
   title: string;
   description: string | null;
@@ -29,63 +33,44 @@ interface Event {
   startTime: string;
   endTime: string;
   location: string | null;
-  createdBy: number;
-  createdAt: string;
 }
 
 interface Attendee {
   id: number;
   userId: number;
-  eventId: number;
   signedInAt: string;
   user: { fullName: string; username: string };
-}
-
-function formatDateRange(startDate: string, endDate: string) {
-  if (startDate === endDate) {
-    return format(parseISO(startDate), "EEEE, MMMM d, yyyy");
-  }
-  const start = parseISO(startDate);
-  const end = parseISO(endDate);
-  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
-    return `${format(start, "MMM d")} - ${format(end, "d, yyyy")}`;
-  }
-  return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
 }
 
 export default function EventDetailPage() {
   const router = useRouter();
   const { id } = router.query;
-  const [user, setUser] = useState<User | null>(null);
-  const [event, setEvent] = useState<Event | null>(null);
+  const user = useUser();
+  const [event, setEvent] = useState<EventRecord | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [loading, setLoading] = useState(true);
   const [signing, setSigning] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/auth/me").then((res) => {
-      if (!res.ok) router.push("/");
-      else res.json().then(setUser);
-    });
-  }, [router]);
+  const [sharing, setSharing] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     Promise.all([
-      fetch(`/api/events/${id}`).then((r) => r.ok ? r.json() : null),
-      fetch(`/api/events/${id}/attendance`).then((r) => r.ok ? r.json() : []),
-    ]).then(([evt, att]) => {
-      setEvent(evt);
-      setAttendees(att);
-    }).finally(() => setLoading(false));
+      fetch(`/api/events/${id}`).then((r) => (r.ok ? r.json() : null)),
+      fetch(`/api/events/${id}/attendance`).then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([evt, att]) => {
+        setEvent(evt);
+        setAttendees(att);
+      })
+      .finally(() => setLoading(false));
   }, [id]);
 
-  if (!user || !id) return null;
+  if (!user) return <AuthLoading />;
 
   const isSignedIn = attendees.some((a) => a.userId === user.userId);
-  const today = new Date().toISOString().slice(0, 10);
-  const isPast = event && event.endDate < today;
-  const isOngoing = event && event.startDate <= today && event.endDate >= today;
+  const status = event
+    ? eventStatus(event.startDate, event.endDate)
+    : "upcoming";
 
   const handleAttendance = async () => {
     setSigning(true);
@@ -93,14 +78,15 @@ export default function EventDetailPage() {
       const res = await fetch(`/api/events/${id}/attendance`, {
         method: isSignedIn ? "DELETE" : "POST",
       });
-      if (res.ok) {
-        toast.success(isSignedIn ? "Signed out" : "Signed in!");
-        const att = await fetch(`/api/events/${id}/attendance`).then((r) => r.json());
-        setAttendees(att);
-      } else {
+      if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed");
+        toast.error(data.error || "Could not update attendance");
+        return;
       }
+      toast.success(isSignedIn ? "Signed out" : "You're signed in");
+      setAttendees(
+        await fetch(`/api/events/${id}/attendance`).then((r) => r.json())
+      );
     } catch {
       toast.error("Connection error");
     } finally {
@@ -109,106 +95,183 @@ export default function EventDetailPage() {
   };
 
   return (
-    <>
-      <Navbar user={user} />
-      <PageLayout>
-        <Button variant="ghost" size="sm" onClick={() => router.push("/events")}>
-          <ArrowLeft /> Back to events
-        </Button>
-
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : !event ? (
-          <p className="text-muted-foreground">Event not found.</p>
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2 space-y-4">
-              <div>
-                <div className="flex items-start gap-3">
-                  <h1 className="text-2xl font-bold">{event.title}</h1>
-                  {isPast && <Badge variant="secondary">Past</Badge>}
-                  {isOngoing && <Badge>Ongoing</Badge>}
-                </div>
-                {event.description && (
-                  <p className="text-muted-foreground mt-2">{event.description}</p>
-                )}
-              </div>
-
-              <Separator />
-
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Calendar className="h-4 w-4" />
-                  <span>{formatDateRange(event.startDate, event.endDate)}</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>{event.startTime.slice(0, 5)} - {event.endTime.slice(0, 5)}</span>
-                </div>
-                {event.location && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <MapPin className="h-4 w-4" />
-                    <span>{event.location}</span>
-                  </div>
-                )}
-              </div>
-
-              {!isPast && (
-                <>
-                  <Separator />
+    <AppShell user={user} back={{ href: "/events", label: "Events" }}>
+      {loading ? (
+        <DetailSkeleton />
+      ) : !event ? (
+        <EmptyState
+          icon={CalendarDays}
+          title="Event not found"
+          description="It may have been deleted."
+        />
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:items-start">
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge status={status} />
+                {isOrganizer(user.role) && (
                   <Button
-                    size="lg"
-                    variant={isSignedIn ? "outline" : "default"}
-                    onClick={handleAttendance}
-                    disabled={signing}
-                    className="w-full sm:w-auto"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() =>
+                      setSharing(
+                        eventShareText(
+                          {
+                            title: event.title,
+                            description: event.description,
+                            dateLabel: formatDateRange(
+                              event.startDate,
+                              event.endDate,
+                              { long: true }
+                            ),
+                            timeLabel: `${formatTime(event.startTime)} – ${formatTime(event.endTime)}`,
+                            location: event.location,
+                          },
+                          `${window.location.origin}/events/${event.id}`
+                        )
+                      )
+                    }
                   >
-                    {signing ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : isSignedIn ? (
-                      <XCircle className="mr-2 h-4 w-4" />
-                    ) : (
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                    )}
-                    {isSignedIn ? "Sign Out" : "Sign In"}
+                    <Share2 /> Share
                   </Button>
-                </>
+                )}
+              </div>
+              <h1 className="font-heading text-2xl leading-tight font-semibold tracking-tight text-balance sm:text-3xl">
+                {event.title}
+              </h1>
+              {event.description && (
+                <p className="text-[15px]/relaxed text-pretty text-muted-foreground">
+                  {event.description}
+                </p>
               )}
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Attendees ({attendees.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {attendees.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No one signed in yet.</p>
-                ) : (
-                  attendees.map((a) => (
-                    <div key={a.id} className="flex items-center gap-2">
-                      <Avatar className="h-7 w-7">
-                        <AvatarFallback className="text-[10px]">
-                          {a.user.fullName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="text-sm">
-                        <p className="font-medium">{a.user.fullName}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Signed in at {format(parseISO(a.signedInAt), "h:mm a")}
-                        </p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+            <dl className="grid gap-px overflow-hidden rounded-xl bg-border ring-1 ring-foreground/10 sm:grid-cols-2">
+              <DetailItem
+                icon={CalendarDays}
+                label="Date"
+                value={formatDateRange(event.startDate, event.endDate, {
+                  long: true,
+                })}
+              />
+              <DetailItem
+                icon={Clock}
+                label="Time"
+                value={`${formatTime(event.startTime)} – ${formatTime(event.endTime)}`}
+              />
+              {event.location && (
+                <DetailItem
+                  icon={MapPin}
+                  label="Location"
+                  value={event.location}
+                  className="sm:col-span-2"
+                />
+              )}
+            </dl>
+
+            {status !== "past" && (
+              <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-0.5">
+                  <p className="font-heading text-sm font-medium">
+                    {isSignedIn ? "You're on the list" : "Attending?"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {isSignedIn
+                      ? "Your attendance counts toward the leaderboard."
+                      : "Sign in so your attendance gets recorded."}
+                  </p>
+                </div>
+                <Button
+                  size="lg"
+                  variant={isSignedIn ? "outline" : "default"}
+                  className="h-11 shrink-0 rounded-xl sm:w-auto"
+                  onClick={handleAttendance}
+                  disabled={signing}
+                >
+                  {signing ? <Spinner /> : isSignedIn ? <X /> : <Check />}
+                  {isSignedIn ? "Sign out" : "Sign in"}
+                </Button>
+              </div>
+            )}
           </div>
-        )}
-      </PageLayout>
-    </>
+
+          <Section title="Attendees" count={attendees.length}>
+            {attendees.length === 0 ? (
+              <EmptyState
+                icon={Users}
+                title="No one yet"
+                description="Be the first to sign in."
+                className="py-8"
+              />
+            ) : (
+              <ListCard>
+                {attendees.map((a) => (
+                  <ListRow key={a.id}>
+                    <Avatar className="size-8">
+                      <AvatarFallback className="bg-secondary text-[11px] font-medium text-foreground">
+                        {initialsOf(a.user.fullName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {a.user.fullName}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        @{a.user.username}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {format(parseISO(a.signedInAt), "HH:mm")}
+                    </span>
+                  </ListRow>
+                ))}
+              </ListCard>
+            )}
+          </Section>
+        </div>
+      )}
+      <ShareDialog
+        text={sharing}
+        title="Share this event"
+        onOpenChange={(open) => !open && setSharing(null)}
+      />
+    </AppShell>
+  );
+}
+
+function DetailItem({
+  icon: Icon,
+  label,
+  value,
+  className,
+}: {
+  icon: typeof Clock;
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("bg-card px-4 py-3", className)}>
+      <dt className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Icon className="size-3.5" aria-hidden="true" />
+        {label}
+      </dt>
+      <dd className="mt-1 text-sm font-medium">{value}</dd>
+    </div>
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <Skeleton className="h-8 w-3/4" />
+        <Skeleton className="h-4 w-full" />
+      </div>
+      <Skeleton className="h-28 w-full rounded-xl" />
+      <Skeleton className="h-20 w-full rounded-xl" />
+    </div>
   );
 }

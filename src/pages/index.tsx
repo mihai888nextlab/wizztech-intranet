@@ -1,106 +1,158 @@
-"use client";
-
 import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/router";
+import { REGEXP_ONLY_DIGITS } from "input-otp";
+import { toast } from "sonner";
+
+import { BrandMark } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Wrench } from "lucide-react";
-import { toast } from "sonner";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     fetch("/api/auth/me").then((res) => {
-      if (res.ok) router.push("/events");
+      if (res.ok) router.replace("/events");
       else setChecking(false);
     });
   }, [router]);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function submit(pinValue: string) {
+    if (loading) return;
     setLoading(true);
 
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password: pinValue }),
       });
 
       if (res.ok) {
-        router.push("/events");
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Login failed");
+        router.replace("/events");
+        return;
       }
+      const data = await res.json();
+      toast.error(data.error || "Login failed");
+      setPin("");
     } catch {
       toast.error("Connection error");
+      setPin("");
     } finally {
       setLoading(false);
     }
   }
 
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (username.trim() && pin.length === 4) submit(pin);
+  }
+
   if (checking) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex min-h-dvh items-center justify-center">
+        <Spinner className="size-5 text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4 bg-gradient-to-br from-background to-muted">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center space-y-2">
-          <div className="flex justify-center mb-2">
-            <div className="rounded-full bg-primary/10 p-3">
-              <Wrench className="h-8 w-8 text-primary" />
-            </div>
+    <div className="relative flex min-h-dvh flex-col overflow-hidden">
+      {/* Soft accent wash behind the form; purely decorative. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 -top-40 h-[420px] bg-[radial-gradient(60%_60%_at_50%_0%,var(--primary)_0%,transparent_70%)] opacity-[0.12]"
+      />
+
+      <div className="flex justify-end p-4">
+        <ThemeToggle className="size-9" />
+      </div>
+
+      <main className="flex flex-1 items-center justify-center px-5 pb-16">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex flex-col items-center text-center">
+            <BrandMark className="size-12 rounded-2xl" />
+            <h1 className="mt-5 font-heading text-2xl font-semibold tracking-tight">
+              WizzTech Intranet
+            </h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Sign in with your username and PIN
+            </p>
           </div>
-          <CardTitle className="text-xl">WizzTech Intranet</CardTitle>
-          <CardDescription>Sign in with your username and PIN</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
               <Input
                 id="username"
-                placeholder="Enter your username"
+                name="username"
+                placeholder="your.name"
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                className="h-11 rounded-xl bg-card px-3.5 text-base"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 autoFocus
               />
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="password">PIN Code</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="4-digit PIN"
+              <Label htmlFor="pin">PIN code</Label>
+              <InputOTP
+                id="pin"
                 maxLength={4}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={password}
-                onChange={(e) => setPassword(e.target.value.replace(/\D/g, ""))}
-                required
-              />
+                pattern={REGEXP_ONLY_DIGITS}
+                autoComplete="one-time-code"
+                value={pin}
+                onChange={setPin}
+                onComplete={(value: string) => {
+                  // The PIN is the last field, so completing it is the submit.
+                  if (username.trim()) submit(value);
+                }}
+                containerClassName="justify-center"
+                disabled={loading}
+              >
+                <InputOTPGroup className="gap-2.5">
+                  {[0, 1, 2, 3].map((i) => (
+                    <InputOTPSlot
+                      key={i}
+                      index={i}
+                      className="size-13 rounded-xl border border-input bg-card text-lg font-medium first:rounded-xl last:rounded-xl"
+                    />
+                  ))}
+                </InputOTPGroup>
+              </InputOTP>
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+
+            <Button
+              type="submit"
+              className="h-11 w-full rounded-xl text-[15px]"
+              disabled={loading || !username.trim() || pin.length !== 4}
+            >
+              {loading && <Spinner />}
               Sign in
             </Button>
           </form>
-        </CardContent>
-      </Card>
+
+          <p className="mt-8 text-center text-xs text-muted-foreground">
+            Trouble signing in? Ask a team organizer to reset your PIN.
+          </p>
+        </div>
+      </main>
     </div>
   );
 }
