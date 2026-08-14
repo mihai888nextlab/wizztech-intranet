@@ -119,7 +119,14 @@ export function usePush() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(subscription.toJSON()),
       });
-      if (!res.ok) throw new Error("Could not save the subscription");
+      if (!res.ok) {
+        // The browser subscription now exists but the server has no record of
+        // it. Roll it back, or the device sits in a state where the UI says
+        // "on" after a reload while nothing can ever be delivered.
+        await subscription.unsubscribe().catch(() => {});
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Could not save the subscription");
+      }
 
       setState("on");
       return { ok: true };
