@@ -3,7 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { pgTable, serial, varchar, timestamp, date, time, text } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, timestamp, date, time, text, integer, boolean } from "drizzle-orm/pg-core";
 
 const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -24,6 +24,24 @@ const events = pgTable("events", {
   endTime: time("end_time").notNull(),
   location: varchar("location", { length: 255 }),
   createdBy: serial("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+const financeSeasons = pgTable("finance_seasons", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).unique().notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  isCurrent: boolean("is_current").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+const financeCategories = pgTable("finance_categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 60 }).notNull(),
+  kind: varchar("kind", { length: 10 }).notNull(),
+  colorIndex: integer("color_index").notNull().default(1),
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -117,6 +135,56 @@ async function seedEvents(db: ReturnType<typeof drizzle>, adminId: number) {
   }
 }
 
+/**
+ * A season and a starter set of headings, so the finance page opens onto
+ * something usable instead of an empty settings tab. Colours are the --chart-N
+ * slots, spread so the busiest categories do not land on neighbouring hues.
+ */
+async function seedFinance(db: ReturnType<typeof drizzle>) {
+  const year = new Date().getFullYear();
+  // An FTC season runs September to April, so before September the team is
+  // still finishing the season that started the previous year.
+  const startYear = new Date().getMonth() >= 8 ? year : year - 1;
+  const name = `${startYear}-${String(startYear + 1).slice(2)} season`;
+
+  const exists = await db.execute(
+    sql`SELECT id FROM finance_seasons LIMIT 1`
+  );
+  if (exists.rowCount && exists.rowCount > 0) {
+    console.log("  Finance seasons already exist, skipping.");
+  } else {
+    await db.insert(financeSeasons).values({
+      name,
+      startDate: `${startYear}-09-01`,
+      endDate: `${startYear + 1}-04-30`,
+      isCurrent: true,
+    });
+    console.log(`  Created season: "${name}"`);
+  }
+
+  const categories = [
+    { name: "Sponsorship", kind: "income", colorIndex: 1 },
+    { name: "Grants", kind: "income", colorIndex: 3 },
+    { name: "Fundraising", kind: "income", colorIndex: 5 },
+    { name: "Team fees", kind: "income", colorIndex: 2 },
+    { name: "Registration", kind: "expense", colorIndex: 1 },
+    { name: "Parts & materials", kind: "expense", colorIndex: 2 },
+    { name: "Tools", kind: "expense", colorIndex: 3 },
+    { name: "Travel", kind: "expense", colorIndex: 4 },
+    { name: "Marketing", kind: "expense", colorIndex: 5 },
+    { name: "Other", kind: "expense", colorIndex: 3 },
+  ];
+
+  for (const category of categories) {
+    const found = await db.execute(
+      sql`SELECT id FROM finance_categories WHERE name = ${category.name} AND kind = ${category.kind} LIMIT 1`
+    );
+    if (found.rowCount && found.rowCount > 0) continue;
+    await db.insert(financeCategories).values(category);
+    console.log(`  Created category: "${category.name}" (${category.kind})`);
+  }
+}
+
 async function seed() {
   const connection = neon(process.env.NEON_DATABASE_URL!);
   const db = drizzle(connection);
@@ -125,6 +193,9 @@ async function seed() {
 
   console.log("Seeding events...");
   await seedEvents(db, adminId);
+
+  console.log("Seeding finance...");
+  await seedFinance(db);
 
   console.log("Seed complete.");
 }

@@ -104,7 +104,7 @@ function TopBar({ user }: { user: SessionUser }) {
           </span>
         </Link>
 
-        {/* Seven items don't fit at md, so the tab bar covers tablets too. */}
+        {/* Eight items don't fit at md, so the tab bar covers tablets too. */}
         <nav className="ml-6 hidden items-center gap-0.5 lg:flex">
           {items.map((item) => {
             const active = isActive(router.pathname, item.href);

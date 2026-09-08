@@ -4,8 +4,9 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/db/schema";
+import type { UserRole } from "@/lib/roles";
 
-export type UserRole = "admin" | "organizer" | "volunteer" | "member";
+export type { UserRole };
 
 export interface SessionData {
   userId: number;
@@ -63,4 +64,9 @@ export async function requireAuth(req: NextApiRequest, res: NextApiResponse, rol
 
 export async function requireAdmin(req: NextApiRequest, res: NextApiResponse) {
   return requireAuth(req, res, ["admin"]);
+}
+
+/** Guard for the ledger: treasurers and admins may write, nobody else. */
+export async function requireFinance(req: NextApiRequest, res: NextApiResponse) {
+  return requireAuth(req, res, ["admin", "finance"]);
 }

@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { db } from "@/lib/db";
 import { fileSubmissions, users } from "@/db/schema";
 import { requireAuth } from "@/lib/auth";
+import { isUserRole } from "@/lib/roles";
 import { deleteObjects } from "@/lib/storage";
 import { eq } from "drizzle-orm";
 
@@ -30,11 +31,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === "PATCH") {
     const { fullName, role } = req.body;
-    const validRoles = ["admin", "organizer", "volunteer", "member"];
 
     const updateData: Record<string, string> = {};
     if (fullName) updateData.fullName = fullName;
-    if (role && validRoles.includes(role)) updateData.role = role;
+    if (role && isUserRole(role)) updateData.role = role;
 
     const [updated] = await db.update(users)
       .set(updateData)

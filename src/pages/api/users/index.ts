@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { db } from "@/lib/db";
 import { users } from "@/db/schema";
 import { hashPassword, requireAuth } from "@/lib/auth";
+import { isUserRole } from "@/lib/roles";
 import { eq } from "drizzle-orm";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -32,8 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Password must be exactly 4 digits" });
     }
 
-    const validRoles = ["admin", "organizer", "volunteer", "member"];
-    if (role && !validRoles.includes(role)) {
+    if (role && !isUserRole(role)) {
       return res.status(400).json({ error: "Invalid role" });
     }
 

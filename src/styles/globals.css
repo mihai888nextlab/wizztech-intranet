@@ -44,11 +44,16 @@
   --input: oklch(0.921 0.005 264);
   --ring: oklch(0.546 0.245 262.9);
 
+  /* Categorical series colours, in assignment order. The hues alternate warm
+     and cool so neighbouring slots stay apart under colour-vision deficiency;
+     validated for the lightness band, chroma floor, CVD separation and 3:1
+     contrast against the card surface in both themes. Assign in order, never
+     cycle — a sixth series folds into "Other". */
   --chart-1: oklch(0.546 0.245 262.9);
-  --chart-2: oklch(0.66 0.14 220);
-  --chart-3: oklch(0.72 0.13 180);
-  --chart-4: oklch(0.62 0.19 300);
-  --chart-5: oklch(0.68 0.16 30);
+  --chart-2: oklch(0.58 0.16 40);
+  --chart-3: oklch(0.58 0.13 175);
+  --chart-4: oklch(0.58 0.2 305);
+  --chart-5: oklch(0.58 0.14 140);
 
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.21 0.012 264);
@@ -89,11 +94,13 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.6 0.17 262);
 
-  --chart-1: oklch(0.7 0.155 262);
-  --chart-2: oklch(0.72 0.13 220);
-  --chart-3: oklch(0.78 0.12 180);
-  --chart-4: oklch(0.7 0.17 300);
-  --chart-5: oklch(0.74 0.15 30);
+  /* Re-stepped for the dark surface rather than flipped: same hues, lifted into
+     the dark lightness band. */
+  --chart-1: oklch(0.64 0.245 262.9);
+  --chart-2: oklch(0.64 0.16 40);
+  --chart-3: oklch(0.64 0.13 175);
+  --chart-4: oklch(0.64 0.2 305);
+  --chart-5: oklch(0.64 0.14 140);
 
   --sidebar: oklch(0.208 0.009 264);
   --sidebar-foreground: oklch(0.965 0.004 264);

@@ -6,8 +6,11 @@ import {
   Timer,
   Trophy,
   User,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
+
+import { isOrganizer } from "@/lib/roles";
 
 export interface NavItem {
   href: string;
@@ -32,6 +35,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: "/documents", label: "Documents", short: "Docs", icon: FileText },
   { href: "/lab", label: "Lab", short: "Lab", icon: Timer },
   { href: "/leaderboard", label: "Leaderboard", short: "Ranks", icon: Trophy },
+  { href: "/finance", label: "Finance", short: "Money", icon: Wallet },
   { href: "/profile", label: "Profile", short: "You", icon: User },
 ];
 
@@ -42,9 +46,7 @@ export const DASHBOARD_NAV: NavItem = {
   icon: LayoutDashboard,
 };
 
-export function isOrganizer(role: string) {
-  return role === "admin" || role === "organizer";
-}
+export { isOrganizer };
 
 /** Wide screens have room for Dashboard alongside the primary items. */
 export function topBarNavFor(role: string): NavItem[] {

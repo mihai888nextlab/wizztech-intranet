@@ -58,8 +58,7 @@ import {
   formatTime,
   initialsOf,
 } from "@/lib/format";
-
-const ROLES = ["member", "volunteer", "organizer", "admin"] as const;
+import { USER_ROLES } from "@/lib/roles";
 
 interface AppUser {
   id: number;
@@ -481,7 +480,7 @@ function RoleSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {ROLES.map((role) => (
+        {USER_ROLES.map((role) => (
           <SelectItem key={role} value={role} className="capitalize">
             {role}
           </SelectItem>

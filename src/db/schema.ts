@@ -227,6 +227,94 @@ export const labSessions = pgTable("lab_sessions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/*
+  Team finances. Every entry belongs to one FTC season and one category, so a
+  season can be summed, charted and compared against the next one.
+*/
+
+/** An FTC competition season — the bucket every finance entry falls into. */
+export const financeSeasons = pgTable("finance_seasons", {
+  id: serial("id").primaryKey(),
+  /** How the team says it out loud, e.g. "2025-26 DECODE". */
+  name: varchar("name", { length: 100 }).unique().notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  /** Exactly one season is current; setting a new one clears the others. */
+  isCurrent: boolean("is_current").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * A heading in the ledger. Categories belong to one side of it — "Sponsorship"
+ * is never an expense — so the entry form can offer only the ones that fit.
+ */
+export const financeCategories = pgTable("finance_categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 60 }).notNull(),
+  /** "income" | "expense" */
+  kind: varchar("kind", { length: 10 }).notNull(),
+  /** 1-5, indexing the --chart-N CSS tokens so charts stay theme-aware. */
+  colorIndex: integer("color_index").notNull().default(1),
+  /** Set instead of deleting once entries reference it, so old seasons still read correctly. */
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  nameKindUnique: uniqueIndex("finance_category_unique").on(table.name, table.kind),
+}));
+
+/**
+ * One movement of money. Amounts are integers in minor units throughout — a
+ * float would quietly lose bani over a season's worth of rows.
+ */
+export const financeEntries = pgTable("finance_entries", {
+  id: serial("id").primaryKey(),
+  seasonId: integer("season_id").notNull().references(() => financeSeasons.id),
+  categoryId: integer("category_id").notNull().references(() => financeCategories.id),
+  /** "income" | "expense". Denormalised from the category so totals need no join. */
+  kind: varchar("kind", { length: 10 }).notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  /** Who paid us, or who we paid. */
+  counterparty: varchar("counterparty", { length: 120 }),
+  note: text("note"),
+  occurredOn: date("occurred_on").notNull(),
+  /** Minor units of `currency` — bani for RON, cents for EUR and USD. */
+  amountMinor: integer("amount_minor").notNull(),
+  /** "RON" | "EUR" | "USD" */
+  currency: varchar("currency", { length: 3 }).notNull().default("RON"),
+  /**
+   * RON per 1 unit of `currency`, times a million (1_000_000 for RON itself).
+   * Frozen when the entry is written, so today's exchange rate can never move
+   * what last season's part order cost.
+   */
+  rateToRonMicros: integer("rate_to_ron_micros").notNull().default(1_000_000),
+  /**
+   * amountMinor converted to bani, recomputed on every write. Every total and
+   * chart sums this one column, so a row and the total it feeds cannot disagree.
+   * Integer bani caps a single entry near 21M RON, well past an FTC team's scale.
+   */
+  amountRonBani: integer("amount_ron_bani").notNull(),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Paperwork backing an entry: the proforma that was quoted, the invoice that
+ * was paid, the contract that was signed. Stored in the bucket like every other
+ * upload, and readable only by treasurers.
+ */
+export const financeDocuments = pgTable("finance_documents", {
+  id: serial("id").primaryKey(),
+  entryId: integer("entry_id").notNull().references(() => financeEntries.id, { onDelete: "cascade" }),
+  /** "proforma" | "invoice" | "contract" | "receipt" | "other" */
+  kind: varchar("kind", { length: 20 }).notNull().default("other"),
+  storageKey: varchar("storage_key", { length: 500 }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   attendance: many(attendance),
   labSessions: many(labSessions),
@@ -381,4 +469,35 @@ export const attendanceRelations = relations(attendance, ({ one }) => ({
 
 export const labSessionsRelations = relations(labSessions, ({ one }) => ({
   user: one(users, { fields: [labSessions.userId], references: [users.id] }),
+}));
+
+export const financeSeasonsRelations = relations(financeSeasons, ({ many }) => ({
+  entries: many(financeEntries),
+}));
+
+export const financeCategoriesRelations = relations(financeCategories, ({ many }) => ({
+  entries: many(financeEntries),
+}));
+
+export const financeEntriesRelations = relations(financeEntries, ({ one, many }) => ({
+  season: one(financeSeasons, {
+    fields: [financeEntries.seasonId],
+    references: [financeSeasons.id],
+  }),
+  category: one(financeCategories, {
+    fields: [financeEntries.categoryId],
+    references: [financeCategories.id],
+  }),
+  author: one(users, {
+    fields: [financeEntries.createdBy],
+    references: [users.id],
+  }),
+  documents: many(financeDocuments),
+}));
+
+export const financeDocumentsRelations = relations(financeDocuments, ({ one }) => ({
+  entry: one(financeEntries, {
+    fields: [financeDocuments.entryId],
+    references: [financeEntries.id],
+  }),
 }));

@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { authenticateUser, getSession } from "@/lib/auth";
+import type { UserRole } from "@/lib/roles";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -20,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   session.userId = user.id;
   session.username = user.username;
   session.fullName = user.fullName;
-  session.role = user.role as "admin" | "organizer" | "volunteer" | "member";
+  session.role = user.role as UserRole;
   session.isLoggedIn = true;
   await session.save();
 

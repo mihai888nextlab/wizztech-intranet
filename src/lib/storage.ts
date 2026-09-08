@@ -93,6 +93,12 @@ export function attachmentKey(announcementId: number, fileName: string) {
   return `announcements/${announcementId}/${crypto.randomUUID()}-${safe || "file"}`;
 }
 
+/** Object key for a document backing a finance entry. */
+export function financeDocumentKey(entryId: number, fileName: string) {
+  const safe = safeObjectName(fileName);
+  return `finance/${entryId}/${crypto.randomUUID()}-${safe || "file"}`;
+}
+
 /** Presigned PUT. The client must send a matching Content-Type. */
 export function presignUpload(key: string, contentType: string) {
   return getSignedUrl(
