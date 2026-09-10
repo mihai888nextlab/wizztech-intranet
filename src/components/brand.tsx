@@ -1,26 +1,35 @@
 import { cn } from "@/lib/utils";
 
-/** The WizzTech mark: a single stroked "W" on a solid tile. */
+/*
+  The WizzTech mark: the team's owl, read straight from public/wizztech-logo.svg
+  rather than inlined here, so replacing that file is all it takes to change the
+  logo everywhere.
+*/
+
+/**
+ * The mark on its own, with no tile behind it: it is a multi-colour figure
+ * rather than a glyph, and a solid backdrop muddies the pale body against the
+ * purple cap.
+ *
+ * Sized by height alone — callers pass `h-8`, `h-12` — so the width follows the
+ * logo's own proportions instead of padding it out to a square, which would
+ * open a stray gap between the mark and the wordmark beside it.
+ */
 export function BrandMark({ className }: { className?: string }) {
   return (
     <span
-      className={cn(
-        "inline-flex size-8 shrink-0 items-center justify-center rounded-[0.55rem] bg-primary text-primary-foreground",
-        className
-      )}
+      className={cn("inline-flex h-8 w-auto shrink-0 items-center", className)}
       aria-hidden="true"
     >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="size-[60%]"
-      >
-        <path d="M3 6 6.5 18 12 8l5.5 10L21 6" />
-      </svg>
+      {/* A plain img, not next/image: the optimizer refuses SVG unless
+          `dangerouslyAllowSVG` is set, and there is nothing to optimise in a
+          vector anyway. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/wizztech-logo.svg"
+        alt=""
+        className="h-full w-auto"
+      />
     </span>
   );
 }

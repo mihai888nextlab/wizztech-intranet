@@ -83,7 +83,7 @@ export default function LoginPage() {
       <main className="flex flex-1 items-center justify-center px-5 pb-16">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex flex-col items-center text-center">
-            <BrandMark className="size-12 rounded-2xl" />
+            <BrandMark className="h-12" />
             <h1 className="mt-5 font-heading text-2xl font-semibold tracking-tight">
               WizzTech Intranet
             </h1>
