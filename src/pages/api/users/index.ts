@@ -18,12 +18,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       username: u.username,
       fullName: u.fullName,
       role: u.role,
+      isVolunteerManager: u.isVolunteerManager,
       createdAt: u.createdAt,
     })));
   }
 
   if (req.method === "POST") {
-    const { username, fullName, password, role } = req.body;
+    const { username, fullName, password, role, isVolunteerManager } = req.body;
 
     if (!username || !fullName || !password) {
       return res.status(400).json({ error: "Username, full name, and password are required" });
@@ -50,6 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       fullName,
       passwordHash,
       role: role || "member",
+      isVolunteerManager: isVolunteerManager === true,
     }).returning();
 
     res.status(201).json({
@@ -57,6 +59,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       username: newUser.username,
       fullName: newUser.fullName,
       role: newUser.role,
+      isVolunteerManager: newUser.isVolunteerManager,
       createdAt: newUser.createdAt,
     });
   }

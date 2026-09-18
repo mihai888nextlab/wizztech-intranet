@@ -30,11 +30,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "PATCH") {
-    const { fullName, role } = req.body;
+    const { fullName, role, isVolunteerManager } = req.body;
 
-    const updateData: Record<string, string> = {};
+    const updateData: { fullName?: string; role?: string; isVolunteerManager?: boolean } = {};
     if (fullName) updateData.fullName = fullName;
     if (role && isUserRole(role)) updateData.role = role;
+    if (typeof isVolunteerManager === "boolean") updateData.isVolunteerManager = isVolunteerManager;
 
     const [updated] = await db.update(users)
       .set(updateData)
@@ -50,6 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       username: updated.username,
       fullName: updated.fullName,
       role: updated.role,
+      isVolunteerManager: updated.isVolunteerManager,
     });
   }
 

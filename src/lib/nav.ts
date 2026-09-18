@@ -1,5 +1,7 @@
 import {
   CalendarDays,
+  HandHeart,
+  Medal,
   FileText,
   LayoutDashboard,
   Megaphone,
@@ -10,7 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { isOrganizer } from "@/lib/roles";
+import { canManageVolunteers, isOrganizer, isVolunteer } from "@/lib/roles";
 
 export interface NavItem {
   href: string;
@@ -46,11 +48,40 @@ export const DASHBOARD_NAV: NavItem = {
   icon: LayoutDashboard,
 };
 
-export { isOrganizer };
+export const VOLUNTEERS_NAV: NavItem = {
+  href: "/volunteers",
+  label: "Volunteers",
+  short: "Crew",
+  icon: HandHeart,
+};
 
-/** Wide screens have room for Dashboard alongside the primary items. */
-export function topBarNavFor(role: string): NavItem[] {
+/** Everything a volunteer can reach — see `isVolunteerPathAllowed`. */
+export const VOLUNTEER_NAV: NavItem[] = [
+  { href: "/events", label: "Events", short: "Events", icon: CalendarDays },
+  { href: "/points", label: "My points", short: "Points", icon: Medal },
+  { href: "/leaderboard", label: "Leaderboard", short: "Ranks", icon: Trophy },
+];
+
+export { canManageVolunteers, isOrganizer, isVolunteer };
+
+/** The mobile tab bar: Dashboard is appended for organizers. */
+export function tabBarNavFor(role: string): NavItem[] {
+  if (isVolunteer(role)) return VOLUNTEER_NAV;
   return isOrganizer(role) ? [...PRIMARY_NAV, DASHBOARD_NAV] : PRIMARY_NAV;
+}
+
+/**
+ * Wide screens also have room for Volunteers. On phones it lives in the
+ * account menu instead — the tab bar is already full.
+ */
+export function topBarNavFor(user: {
+  role: string;
+  isVolunteerManager: boolean;
+}): NavItem[] {
+  const items = tabBarNavFor(user.role);
+  return canManageVolunteers(user.role, user.isVolunteerManager)
+    ? [...items, VOLUNTEERS_NAV]
+    : items;
 }
 
 /** A nav item owns a route when the path is the item or a child of it. */

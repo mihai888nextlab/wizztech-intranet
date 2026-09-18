@@ -7,6 +7,11 @@ export const users = pgTable("users", {
   fullName: varchar("full_name", { length: 100 }).notNull(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   role: varchar("role", { length: 20 }).notNull().default("member"),
+  /**
+   * An extra permission on top of `role`, not a role of its own: a member who
+   * also runs the volunteers keeps everything a member has.
+   */
+  isVolunteerManager: boolean("is_volunteer_manager").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -197,6 +202,23 @@ export const attendance = pgTable("attendance", {
 }, (table) => ({
   userEventUnique: uniqueIndex("user_event_unique").on(table.userId, table.eventId),
 }));
+
+/**
+ * One award of points to a volunteer. The total is the sum of the rows, so a
+ * mistake is undone by deleting the row or by a negative correction, and the
+ * volunteer can always see why their score is what it is.
+ */
+export const volunteerPoints = pgTable("volunteer_points", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** Negative for corrections. */
+  amount: integer("amount").notNull(),
+  reason: varchar("reason", { length: 200 }).notNull(),
+  /** The event the points were earned at, if any. */
+  eventId: integer("event_id").references(() => events.id, { onDelete: "set null" }),
+  awardedBy: integer("awarded_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 /**
  * One row per browser, not per person: a member with a phone and a laptop has

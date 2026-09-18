@@ -30,6 +30,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       WHERE duration_minutes IS NOT NULL
       GROUP BY user_id
     ) l ON l.user_id = u.id
+    -- Volunteers have their own points-based ranking at /api/volunteers/leaderboard.
+    WHERE u.role <> 'volunteer'
     ORDER BY (COALESCE(a.event_count, 0) * 60 + COALESCE(l.total_minutes, 0)) DESC
   `);
 

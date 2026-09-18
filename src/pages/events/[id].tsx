@@ -20,7 +20,7 @@ import {
   formatTime,
   initialsOf,
 } from "@/lib/format";
-import { isOrganizer } from "@/lib/nav";
+import { isOrganizer, isVolunteer } from "@/lib/nav";
 import { eventShareText } from "@/lib/share";
 import { cn } from "@/lib/utils";
 
@@ -178,9 +178,11 @@ export default function EventDetailPage() {
                     {isSignedIn ? "You're on the list" : "Attending?"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {isSignedIn
-                      ? "Your attendance counts toward the leaderboard."
-                      : "Sign in so your attendance gets recorded."}
+                    {!isSignedIn
+                      ? "Sign in so your attendance gets recorded."
+                      : isVolunteer(user.role)
+                        ? "Thanks for helping out."
+                        : "Your attendance counts toward the leaderboard."}
                   </p>
                 </div>
                 <Button

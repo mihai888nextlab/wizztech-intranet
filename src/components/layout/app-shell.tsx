@@ -1,7 +1,13 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { ArrowLeft, LayoutDashboard, LogOut, User as UserIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  HandHeart,
+  LayoutDashboard,
+  LogOut,
+  User as UserIcon,
+} from "lucide-react";
 
 import { BrandMark } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -18,7 +24,14 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import type { SessionUser } from "@/hooks/use-user";
 import { initialsOf } from "@/lib/format";
-import { isActive, isOrganizer, topBarNavFor } from "@/lib/nav";
+import {
+  canManageVolunteers,
+  isActive,
+  isOrganizer,
+  isVolunteer,
+  tabBarNavFor,
+  topBarNavFor,
+} from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 interface AppShellProps {
@@ -89,7 +102,7 @@ export function AppShell({
 
 function TopBar({ user }: { user: SessionUser }) {
   const router = useRouter();
-  const items = topBarNavFor(user.role);
+  const items = topBarNavFor(user);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 chrome-blur">
@@ -171,13 +184,22 @@ function AccountMenu({ user }: { user: SessionUser }) {
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/profile")}>
-          <UserIcon /> Profile
-        </DropdownMenuItem>
+        {/* Volunteers have no profile page; their points page stands in for it. */}
+        {!isVolunteer(user.role) && (
+          <DropdownMenuItem onClick={() => router.push("/profile")}>
+            <UserIcon /> Profile
+          </DropdownMenuItem>
+        )}
         {/* Dashboard is here too — on phones it also appears in the tab bar. */}
         {isOrganizer(user.role) && (
           <DropdownMenuItem onClick={() => router.push("/dashboard")}>
             <LayoutDashboard /> Dashboard
+          </DropdownMenuItem>
+        )}
+        {/* The only way to Volunteers on a phone — it isn't in the tab bar. */}
+        {canManageVolunteers(user.role, user.isVolunteerManager) && (
+          <DropdownMenuItem onClick={() => router.push("/volunteers")}>
+            <HandHeart /> Volunteers
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
@@ -192,7 +214,7 @@ function AccountMenu({ user }: { user: SessionUser }) {
 /** Fixed bottom navigation — the primary way around the app on a phone. */
 function TabBar({ user }: { user: SessionUser }) {
   const router = useRouter();
-  const items = topBarNavFor(user.role);
+  const items = tabBarNavFor(user.role);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 chrome-blur pb-safe lg:hidden">

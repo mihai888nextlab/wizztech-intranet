@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
-import { CalendarDays, Timer, Trophy } from "lucide-react";
+import { CalendarDays, HandHeart, Timer, Trophy } from "lucide-react";
 
 import { AppShell, AuthLoading } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/empty-state";
-import { ListCard, ListRow } from "@/components/section";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { RankRow, StandingCard } from "@/components/ranking";
+import { ListCard } from "@/components/section";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@/hooks/use-user";
-import { formatDuration, initialsOf } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { formatDuration } from "@/lib/format";
+import { isVolunteer } from "@/lib/roles";
 
 interface LeaderboardEntry {
   rank: number;
@@ -21,14 +22,58 @@ interface LeaderboardEntry {
   score: number;
 }
 
-const MEDALS: Record<number, string> = {
-  1: "bg-amber-400/15 text-amber-600 ring-amber-500/25 dark:text-amber-400",
-  2: "bg-zinc-400/15 text-zinc-600 ring-zinc-400/25 dark:text-zinc-300",
-  3: "bg-orange-700/15 text-orange-700 ring-orange-700/25 dark:text-orange-400",
-};
+interface VolunteerEntry {
+  rank: number;
+  userId: number;
+  fullName: string;
+  points: number;
+}
 
 export default function LeaderboardPage() {
   const user = useUser();
+
+  if (!user) return <AuthLoading />;
+
+  // Volunteers only ever see their own ranking; the team's isn't theirs to see.
+  if (isVolunteer(user.role)) {
+    return (
+      <AppShell
+        user={user}
+        title="Leaderboard"
+        description="Volunteers ranked by points."
+      >
+        <VolunteerBoard userId={user.userId} />
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell
+      user={user}
+      title="Leaderboard"
+      description="Ranked by events attended and hours in the lab."
+    >
+      <Tabs defaultValue="team" className="gap-5">
+        <TabsList className="h-9 w-full sm:w-auto">
+          <TabsTrigger value="team" className="px-4">
+            Team
+          </TabsTrigger>
+          <TabsTrigger value="volunteers" className="px-4">
+            Volunteers
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="team">
+          <TeamBoard userId={user.userId} />
+        </TabsContent>
+        <TabsContent value="volunteers">
+          <VolunteerBoard userId={user.userId} />
+        </TabsContent>
+      </Tabs>
+    </AppShell>
+  );
+}
+
+function TeamBoard({ userId }: { userId: number }) {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,121 +84,117 @@ export default function LeaderboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (!user) return <AuthLoading />;
-
-  const mine = entries.find((e) => e.userId === user.userId);
+  const mine = entries.find((e) => e.userId === userId);
 
   return (
-    <AppShell
-      user={user}
-      title="Leaderboard"
-      description="Ranked by events attended and hours in the lab."
-    >
-      <div className="space-y-6">
-        {mine && <YourStanding entry={mine} total={entries.length} />}
+    <div className="space-y-6">
+      {mine && (
+        <StandingCard
+          rank={mine.rank}
+          title="Your standing"
+          score={mine.score}
+          detail={
+            <>
+              {mine.rank} of {entries.length} · {mine.eventsAttended} event
+              {mine.eventsAttended === 1 ? "" : "s"} ·{" "}
+              {formatDuration(mine.totalMinutes)} in the lab
+            </>
+          }
+        />
+      )}
 
-        {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-xl" />
-            ))}
-          </div>
-        ) : entries.length === 0 ? (
-          <EmptyState
-            icon={Trophy}
-            title="Nothing to rank yet"
-            description="Scores appear once the team starts logging events and lab hours."
-          />
-        ) : (
-          <ListCard>
-            {entries.map((entry) => (
-              <ListRow
-                key={entry.userId}
-                className={cn(
-                  "gap-3",
-                  entry.userId === user.userId && "bg-primary/5"
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums ring-1 ring-inset",
-                    MEDALS[entry.rank] ??
-                      "bg-muted text-muted-foreground ring-transparent"
-                  )}
-                >
-                  {entry.rank}
-                </span>
-
-                <Avatar className="hidden size-8 sm:flex">
-                  <AvatarFallback className="bg-secondary text-[11px] font-medium text-foreground">
-                    {initialsOf(entry.fullName)}
-                  </AvatarFallback>
-                </Avatar>
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {entry.fullName}
-                    {entry.userId === user.userId && (
-                      <span className="ml-1.5 text-xs font-normal text-primary">
-                        you
-                      </span>
-                    )}
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1 tabular-nums">
-                      <CalendarDays className="size-3" />
-                      {entry.eventsAttended}
-                    </span>
-                    <span className="inline-flex items-center gap-1 tabular-nums">
-                      <Timer className="size-3" />
-                      {formatDuration(entry.totalMinutes)}
-                    </span>
-                  </p>
-                </div>
-
-                <span className="shrink-0 font-heading text-base font-semibold tabular-nums">
-                  {entry.score}
-                </span>
-              </ListRow>
-            ))}
-          </ListCard>
-        )}
-      </div>
-    </AppShell>
+      {loading ? (
+        <ListSkeleton />
+      ) : entries.length === 0 ? (
+        <EmptyState
+          icon={Trophy}
+          title="Nothing to rank yet"
+          description="Scores appear once the team starts logging events and lab hours."
+        />
+      ) : (
+        <ListCard>
+          {entries.map((entry) => (
+            <RankRow
+              key={entry.userId}
+              rank={entry.rank}
+              fullName={entry.fullName}
+              isYou={entry.userId === userId}
+              score={entry.score}
+              detail={
+                <>
+                  <span className="inline-flex items-center gap-1 tabular-nums">
+                    <CalendarDays className="size-3" />
+                    {entry.eventsAttended}
+                  </span>
+                  <span className="inline-flex items-center gap-1 tabular-nums">
+                    <Timer className="size-3" />
+                    {formatDuration(entry.totalMinutes)}
+                  </span>
+                </>
+              }
+            />
+          ))}
+        </ListCard>
+      )}
+    </div>
   );
 }
 
-function YourStanding({
-  entry,
-  total,
-}: {
-  entry: LeaderboardEntry;
-  total: number;
-}) {
+function VolunteerBoard({ userId }: { userId: number }) {
+  const [entries, setEntries] = useState<VolunteerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/volunteers/leaderboard")
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setEntries)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const mine = entries.find((e) => e.userId === userId);
+
   return (
-    <div className="flex items-center gap-4 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
-      <div className="flex size-14 shrink-0 flex-col items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <span className="text-[10px] font-medium tracking-wide uppercase opacity-70">
-          Rank
-        </span>
-        <span className="font-heading text-xl leading-none font-semibold tabular-nums">
-          {entry.rank}
-        </span>
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="font-heading text-sm font-medium">Your standing</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {entry.rank} of {total} · {entry.eventsAttended} event
-          {entry.eventsAttended === 1 ? "" : "s"} ·{" "}
-          {formatDuration(entry.totalMinutes)} in the lab
-        </p>
-      </div>
-      <div className="shrink-0 text-right">
-        <p className="font-heading text-2xl leading-none font-semibold tabular-nums">
-          {entry.score}
-        </p>
-        <p className="mt-1 text-[11px] text-muted-foreground">points</p>
-      </div>
+    <div className="space-y-6">
+      {mine && (
+        <StandingCard
+          rank={mine.rank}
+          title="Your standing"
+          score={mine.points}
+          detail={`${mine.rank} of ${entries.length} volunteers`}
+        />
+      )}
+
+      {loading ? (
+        <ListSkeleton />
+      ) : entries.length === 0 ? (
+        <EmptyState
+          icon={HandHeart}
+          title="No volunteers yet"
+          description="Volunteers appear here once a volunteer manager adds them."
+        />
+      ) : (
+        <ListCard>
+          {entries.map((entry) => (
+            <RankRow
+              key={entry.userId}
+              rank={entry.rank}
+              fullName={entry.fullName}
+              isYou={entry.userId === userId}
+              score={entry.points}
+            />
+          ))}
+        </ListCard>
+      )}
+    </div>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Skeleton key={i} className="h-16 w-full rounded-xl" />
+      ))}
     </div>
   );
 }

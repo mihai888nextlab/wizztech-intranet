@@ -4,27 +4,10 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/db/schema";
-import type { UserRole } from "@/lib/roles";
+import { canManageVolunteers, type UserRole } from "@/lib/roles";
+import { sessionOptions, type SessionData } from "@/lib/session";
 
-export type { UserRole };
-
-export interface SessionData {
-  userId: number;
-  username: string;
-  fullName: string;
-  role: UserRole;
-  isLoggedIn: boolean;
-}
-
-const sessionOptions = {
-  password: process.env.SESSION_SECRET || "complex_password_at_least_32_characters_long_for_security",
-  cookieName: "wizztech_session",
-  cookieOptions: {
-    secure: process.env.NODE_ENV === "production",
-    httpOnly: true,
-    sameSite: "lax" as const,
-  },
-};
+export type { SessionData, UserRole };
 
 export async function getSession(req: NextApiRequest, res: NextApiResponse): Promise<IronSession<SessionData>> {
   return getIronSession<SessionData>(req, res, sessionOptions);
@@ -69,4 +52,20 @@ export async function requireAdmin(req: NextApiRequest, res: NextApiResponse) {
 /** Guard for the ledger: treasurers and admins may write, nobody else. */
 export async function requireFinance(req: NextApiRequest, res: NextApiResponse) {
   return requireAuth(req, res, ["admin", "finance"]);
+}
+
+/**
+ * Guard for the volunteer pages: admins, and anyone holding the volunteer
+ * manager permission. The flag is read from the database rather than the
+ * session, so granting or revoking it applies without signing out.
+ */
+export async function requireVolunteerManager(req: NextApiRequest, res: NextApiResponse) {
+  const session = await requireAuth(req, res);
+  if (!session) return null;
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, session.userId),
+    columns: { role: true, isVolunteerManager: true },
+  });
+  if (!user || !canManageVolunteers(user.role, user.isVolunteerManager)) return null;
+  return session;
 }

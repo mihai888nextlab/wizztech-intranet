@@ -6,6 +6,8 @@ export interface SessionUser {
   username: string;
   fullName: string;
   role: string;
+  /** May create volunteers and give them points; admins may regardless. */
+  isVolunteerManager: boolean;
 }
 
 /**

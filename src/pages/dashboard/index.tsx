@@ -25,6 +25,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -65,6 +66,7 @@ interface AppUser {
   username: string;
   fullName: string;
   role: string;
+  isVolunteerManager: boolean;
   createdAt: string;
 }
 
@@ -314,6 +316,11 @@ function UsersTab({
                   {format(parseISO(u.createdAt), "MMM d, yyyy")}
                 </p>
               </div>
+              {u.isVolunteerManager && (
+                <Badge variant="secondary" className="hidden shrink-0 sm:inline-flex">
+                  Volunteer manager
+                </Badge>
+              )}
               <Badge variant="outline" className="shrink-0 capitalize">
                 {u.role}
               </Badge>
@@ -490,6 +497,25 @@ function RoleSelect({
   );
 }
 
+/** An extra permission on top of the role, so any member can hold it. */
+function VolunteerManagerCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <Label className="flex items-center gap-2 font-normal">
+      <Checkbox
+        checked={checked}
+        onCheckedChange={(next) => onChange(next === true)}
+      />
+      Volunteer manager — can add volunteers and give them points
+    </Label>
+  );
+}
+
 function CreateUserDialog({
   onCreated,
 }: {
@@ -500,6 +526,7 @@ function CreateUserDialog({
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<string>("member");
+  const [isVolunteerManager, setIsVolunteerManager] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -509,7 +536,13 @@ function CreateUserDialog({
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, fullName, password, role }),
+        body: JSON.stringify({
+          username,
+          fullName,
+          password,
+          role,
+          isVolunteerManager,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -523,6 +556,7 @@ function CreateUserDialog({
       setFullName("");
       setPassword("");
       setRole("member");
+      setIsVolunteerManager(false);
     } catch {
       toast.error("Connection error");
     } finally {
@@ -578,6 +612,10 @@ function CreateUserDialog({
             <Label htmlFor="role">Role</Label>
             <RoleSelect id="role" value={role} onChange={setRole} />
           </div>
+          <VolunteerManagerCheckbox
+            checked={isVolunteerManager}
+            onChange={setIsVolunteerManager}
+          />
           <Button
             type="submit"
             className="h-10 w-full rounded-xl"
@@ -603,6 +641,7 @@ function EditUserDialog({
 }) {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<string>("member");
+  const [isVolunteerManager, setIsVolunteerManager] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadedId, setLoadedId] = useState<number | null>(null);
 
@@ -611,6 +650,7 @@ function EditUserDialog({
     setLoadedId(user.id);
     setFullName(user.fullName);
     setRole(user.role);
+    setIsVolunteerManager(user.isVolunteerManager);
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -621,7 +661,7 @@ function EditUserDialog({
       const res = await fetch(`/api/users/${user.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, role }),
+        body: JSON.stringify({ fullName, role, isVolunteerManager }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -629,7 +669,12 @@ function EditUserDialog({
         return;
       }
       const updated = await res.json();
-      onUpdated({ ...user, fullName: updated.fullName, role: updated.role });
+      onUpdated({
+        ...user,
+        fullName: updated.fullName,
+        role: updated.role,
+        isVolunteerManager: updated.isVolunteerManager,
+      });
       toast.success("Member updated");
       onOpenChange(false);
     } catch {
@@ -660,6 +705,10 @@ function EditUserDialog({
             <Label htmlFor="editRole">Role</Label>
             <RoleSelect id="editRole" value={role} onChange={setRole} />
           </div>
+          <VolunteerManagerCheckbox
+            checked={isVolunteerManager}
+            onChange={setIsVolunteerManager}
+          />
           <Button
             type="submit"
             className="h-10 w-full rounded-xl"
