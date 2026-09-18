@@ -1,0 +1,59 @@
+import type { NextApiRequest, NextApiResponse } from "next";
+import { db } from "@/lib/db";
+import { fileSubmissions, users } from "@/db/schema";
+import { requireAuth } from "@/lib/auth";
+import { isUserRole } from "@/lib/roles";
+import { deleteObjects } from "@/lib/storage";
+import { eq } from "drizzle-orm";
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const session = await requireAuth(req, res, ["admin"]);
+  if (!session) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const id = parseInt(req.query.id as string, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: "Invalid user ID" });
+  }
+
+  if (req.method === "DELETE") {
+    // Deleting the row cascades their submissions, but not the stored files.
+    const submitted = await db
+      .select({ storageKey: fileSubmissions.storageKey })
+      .from(fileSubmissions)
+      .where(eq(fileSubmissions.userId, id));
+    await deleteObjects(submitted.map((s) => s.storageKey));
+
+    await db.delete(users).where(eq(users.id, id));
+    return res.status(200).json({ success: true });
+  }
+
+  if (req.method === "PATCH") {
+    const { fullName, role, isVolunteerManager } = req.body;
+
+    const updateData: { fullName?: string; role?: string; isVolunteerManager?: boolean } = {};
+    if (fullName) updateData.fullName = fullName;
+    if (role && isUserRole(role)) updateData.role = role;
+    if (typeof isVolunteerManager === "boolean") updateData.isVolunteerManager = isVolunteerManager;
+
+    const [updated] = await db.update(users)
+      .set(updateData)
+      .where(eq(users.id, id))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    return res.status(200).json({
+      id: updated.id,
+      username: updated.username,
+      fullName: updated.fullName,
+      role: updated.role,
+      isVolunteerManager: updated.isVolunteerManager,
+    });
+  }
+
+  res.status(405).json({ error: "Method not allowed" });
+}

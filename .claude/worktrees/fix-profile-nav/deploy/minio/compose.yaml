@@ -1,0 +1,55 @@
+# MinIO for WizzTech document storage.
+#
+# Bound to localhost only — your existing reverse proxy terminates TLS and
+# forwards to it. Nothing here should be published to the public interface.
+#
+#   podman-compose up -d      (or: docker compose up -d)
+
+services:
+  minio:
+    image: docker.io/minio/minio:latest
+    container_name: wizz-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      # 127.0.0.1 prefix is deliberate: only the proxy on this host may reach it.
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set it in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set it in .env}
+
+      # The public URL clients see. Without this, MinIO builds redirects and
+      # console links from the internal address and the browser breaks.
+      MINIO_SERVER_URL: https://${S3_DOMAIN:?set it in .env}
+      MINIO_BROWSER_REDIRECT_URL: https://${CONSOLE_DOMAIN:?set it in .env}
+
+      # Browser uploads come straight from the app origin, so only allow those.
+      # MinIO emits the CORS headers itself — do NOT also add them in the proxy,
+      # duplicated Access-Control-Allow-Origin headers make browsers refuse.
+      MINIO_API_CORS_ALLOW_ORIGIN: ${CORS_ORIGINS:?set it in .env}
+
+    volumes:
+      # A bind mount onto the real disk. Do not use a named volume here: it
+      # lands on the container overlay filesystem, which is measurably slower
+      # and much easier to lose.
+      - ${MINIO_DATA_DIR:-/srv/minio/data}:/data
+
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # 8 GB box: leave room for the OS and your other services.
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
