@@ -5,7 +5,12 @@ import { users } from "@/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { isVolunteer } from "@/lib/roles";
 import { parseDepartments } from "@/lib/volunteers";
-import { pointsHistory, volunteerStandings } from "@/lib/volunteers.server";
+import {
+  departmentRanks,
+  departmentTotals,
+  pointsHistory,
+  volunteerStandings,
+} from "@/lib/volunteers.server";
 
 /**
  * A volunteer's own points, and the one field they may edit about themselves.
@@ -18,9 +23,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "GET") {
-    const [standings, history] = await Promise.all([
+    const [standings, history, byDepartment, ranks] = await Promise.all([
       volunteerStandings(),
       pointsHistory(session.userId),
+      departmentTotals(session.userId),
+      departmentRanks(session.userId),
     ]);
     const mine = standings.find((s) => s.userId === session.userId);
 
@@ -28,11 +35,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       points: history.reduce((sum, award) => sum + award.amount, 0),
       rank: mine?.rank ?? null,
       total: standings.length,
+      // The split, so a volunteer can see which team they're earning in.
+      byDepartment: byDepartment.map((row) => ({
+        ...row,
+        rank: ranks[row.department].rank,
+        total: ranks[row.department].total,
+      })),
       // Who gave the points is between the managers; the reason is what matters here.
-      history: history.map(({ id, amount, reason, createdAt, event }) => ({
+      history: history.map(({ id, amount, reason, department, createdAt, event }) => ({
         id,
         amount,
         reason,
+        department,
         createdAt,
         event,
       })),

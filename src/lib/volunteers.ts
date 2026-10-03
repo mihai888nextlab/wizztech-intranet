@@ -97,6 +97,7 @@ export const MAX_AWARD = 10_000;
 export interface AwardInput {
   amount: number;
   reason: string;
+  department: VolunteerDepartment;
   eventId: number | null;
 }
 
@@ -122,6 +123,11 @@ export function parseAwardInput(
     return { ok: false, error: `Reason must be at most ${MAX_REASON_LENGTH} characters` };
   }
 
+  if (!isVolunteerDepartment(input.department)) {
+    return { ok: false, error: "Pick which department these points are for" };
+  }
+  const department = input.department;
+
   let eventId: number | null = null;
   if (input.eventId !== undefined && input.eventId !== null && input.eventId !== "") {
     const parsed = Number(input.eventId);
@@ -131,20 +137,38 @@ export function parseAwardInput(
     eventId = parsed;
   }
 
-  return { ok: true, value: { amount, reason, eventId } };
+  return { ok: true, value: { amount, reason, department, eventId } };
 }
 
 export interface VolunteerStanding {
   userId: number;
   fullName: string;
   points: number;
-  rank: number;
+  /** Null for anyone yet to score — see `rankVolunteers`. */
+  rank: number | null;
+}
+
+/**
+ * The boards the leaderboard offers: the four departments, plus "overall" for
+ * everyone's total across all of them.
+ */
+export const OVERALL_BOARD = "overall";
+
+export type LeaderboardBoard = typeof OVERALL_BOARD | VolunteerDepartment;
+
+export function isLeaderboardBoard(value: unknown): value is LeaderboardBoard {
+  return value === OVERALL_BOARD || isVolunteerDepartment(value);
 }
 
 /**
  * Orders volunteers by points, highest first. Ties share a rank ("1, 2, 2, 4")
  * and are listed alphabetically, so two volunteers on the same score are never
  * told one of them is behind.
+ *
+ * Nobody on zero gets a rank at all. They still appear — a volunteer has to be
+ * able to find themselves on their department's board — but as "–" rather than
+ * a number: with four department boards that mostly start empty, ranking
+ * everyone who hasn't scored would put half the team in joint first.
  */
 export function rankVolunteers(
   rows: { userId: number; fullName: string; points: number }[]
@@ -154,8 +178,15 @@ export function rankVolunteers(
   );
   const ranked: VolunteerStanding[] = [];
   sorted.forEach((row, index) => {
+    if (row.points === 0) {
+      ranked.push({ ...row, rank: null });
+      return;
+    }
     const above = ranked[index - 1];
-    const rank = above && above.points === row.points ? above.rank : index + 1;
+    const rank =
+      above && above.rank !== null && above.points === row.points
+        ? above.rank
+        : index + 1;
     ranked.push({ ...row, rank });
   });
   return ranked;

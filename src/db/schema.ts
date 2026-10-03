@@ -241,6 +241,14 @@ export const volunteerPoints = pgTable("volunteer_points", {
   /** Negative for corrections. */
   amount: integer("amount").notNull(),
   reason: varchar("reason", { length: 200 }).notNull(),
+  /**
+   * Which department the points were earned in — one of
+   * `VOLUNTEER_DEPARTMENTS`, and required, so every point lands on exactly one
+   * department board and the boards add up to the whole. It is the award's own
+   * department rather than the volunteer's: most volunteers are on several
+   * teams, and someone can help out a team they aren't on.
+   */
+  department: varchar("department", { length: 20 }).notNull(),
   /** The event the points were earned at, if any. */
   eventId: integer("event_id").references(() => events.id, { onDelete: "set null" }),
   awardedBy: integer("awarded_by").references(() => users.id, { onDelete: "set null" }),

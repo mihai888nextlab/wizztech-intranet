@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   departmentLabel,
+  isLeaderboardBoard,
   isValidPin,
   isVolunteerDepartment,
   isVolunteerPathAllowed,
@@ -72,26 +73,53 @@ for (const path of [
   });
 }
 
+const AWARD = { amount: 5, reason: "Setup", department: "media" };
+
 test("an award needs whole, non-zero points and a reason", () => {
-  assert.equal(parseAwardInput({ amount: 0, reason: "x" }).ok, false);
-  assert.equal(parseAwardInput({ amount: 1.5, reason: "x" }).ok, false);
-  assert.equal(parseAwardInput({ amount: "abc", reason: "x" }).ok, false);
-  assert.equal(parseAwardInput({ amount: 5, reason: "   " }).ok, false);
-  assert.equal(parseAwardInput({ amount: 5, reason: "x".repeat(201) }).ok, false);
-  assert.equal(parseAwardInput({ amount: 100_000, reason: "x" }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, amount: 0 }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, amount: 1.5 }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, amount: "abc" }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, reason: "   " }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, reason: "x".repeat(201) }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, amount: 100_000 }).ok, false);
   assert.equal(parseAwardInput(undefined).ok, false);
 });
 
+test("an award must name a department, so every point lands on a board", () => {
+  assert.equal(parseAwardInput({ amount: 5, reason: "Setup" }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, department: "catering" }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, department: "Media" }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, department: null }).ok, false);
+  assert.equal(parseAwardInput({ ...AWARD, department: ["media"] }).ok, false);
+  assert.equal(parseAwardInput(AWARD).ok, true);
+});
+
 test("an award accepts corrections, string amounts and an optional event", () => {
-  assert.deepEqual(parseAwardInput({ amount: "-3", reason: " Late ", eventId: "" }), {
-    ok: true,
-    value: { amount: -3, reason: "Late", eventId: null },
-  });
-  assert.deepEqual(parseAwardInput({ amount: 10, reason: "Setup", eventId: "7" }), {
-    ok: true,
-    value: { amount: 10, reason: "Setup", eventId: 7 },
-  });
-  assert.equal(parseAwardInput({ amount: 10, reason: "Setup", eventId: "x" }).ok, false);
+  assert.deepEqual(
+    parseAwardInput({ amount: "-3", reason: " Late ", department: "media", eventId: "" }),
+    {
+      ok: true,
+      value: { amount: -3, reason: "Late", department: "media", eventId: null },
+    }
+  );
+  assert.deepEqual(
+    parseAwardInput({ amount: 10, reason: "Setup", department: "engineering", eventId: "7" }),
+    {
+      ok: true,
+      value: { amount: 10, reason: "Setup", department: "engineering", eventId: 7 },
+    }
+  );
+  assert.equal(parseAwardInput({ ...AWARD, eventId: "x" }).ok, false);
+});
+
+test("the leaderboard accepts overall and the four departments, nothing else", () => {
+  assert.equal(isLeaderboardBoard("overall"), true);
+  for (const d of ["engineering", "programming", "media", "marketing"]) {
+    assert.equal(isLeaderboardBoard(d), true);
+  }
+  assert.equal(isLeaderboardBoard("team"), false);
+  assert.equal(isLeaderboardBoard(""), false);
+  assert.equal(isLeaderboardBoard(undefined), false);
 });
 
 test("ranking puts the most points first and ties share a rank", () => {
@@ -103,7 +131,33 @@ test("ranking puts the most points first and ties share a rank", () => {
   ]);
   assert.deepEqual(
     ranked.map((r) => [r.fullName, r.rank]),
-    [["Ana", 1], ["Bob", 2], ["Cara", 2], ["Dan", 4]]
+    [["Ana", 1], ["Bob", 2], ["Cara", 2], ["Dan", null]]
+  );
+});
+
+test("nobody on zero is ranked, however many of them there are", () => {
+  // The common case on a department board that nobody has scored in yet:
+  // ranking them would read as a four-way tie for first.
+  const ranked = rankVolunteers([
+    { userId: 1, fullName: "Cara", points: 0 },
+    { userId: 2, fullName: "Ana", points: 0 },
+    { userId: 3, fullName: "Bob", points: 0 },
+  ]);
+  assert.deepEqual(ranked.map((r) => r.rank), [null, null, null]);
+  // They are still listed, alphabetically, so each can find themselves.
+  assert.deepEqual(ranked.map((r) => r.fullName), ["Ana", "Bob", "Cara"]);
+});
+
+test("a rank still counts positions, not scorers", () => {
+  const ranked = rankVolunteers([
+    { userId: 1, fullName: "Ana", points: 20 },
+    { userId: 2, fullName: "Bob", points: 10 },
+    { userId: 3, fullName: "Cara", points: 0 },
+    { userId: 4, fullName: "Dan", points: -5 },
+  ]);
+  assert.deepEqual(
+    ranked.map((r) => [r.fullName, r.rank]),
+    [["Ana", 1], ["Bob", 2], ["Cara", null], ["Dan", 4]]
   );
 });
 

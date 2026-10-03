@@ -5,12 +5,15 @@ import { CalendarDays, Medal, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { ListCard, ListRow } from "@/components/section";
 import { Button } from "@/components/ui/button";
+import { departmentLabel } from "@/lib/volunteers";
 import { cn } from "@/lib/utils";
 
 export interface PointsAward {
   id: number;
   amount: number;
   reason: string;
+  /** Which department board these points landed on. */
+  department: string;
   createdAt: string;
   event: { id: number; title: string } | null;
   /** Only sent to managers. */
@@ -58,6 +61,7 @@ export function PointsHistory({
               <span className="shrink-0 tabular-nums">
                 {format(parseISO(award.createdAt), "d MMM yyyy")}
               </span>
+              <span className="shrink-0">{departmentLabel([award.department])}</span>
               {award.event && (
                 <Link
                   href={`/events/${award.event.id}`}

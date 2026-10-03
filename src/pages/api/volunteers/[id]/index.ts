@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { users } from "@/db/schema";
 import { hashPassword, requireVolunteerManager } from "@/lib/auth";
 import { isValidPin, parseDepartments, type VolunteerDepartment } from "@/lib/volunteers";
-import { findVolunteer, pointsHistory } from "@/lib/volunteers.server";
+import { departmentTotals, findVolunteer, pointsHistory } from "@/lib/volunteers.server";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await requireVolunteerManager(req, res);
@@ -23,7 +23,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "GET") {
-    const history = await pointsHistory(id);
+    const [history, byDepartment] = await Promise.all([
+      pointsHistory(id),
+      departmentTotals(id),
+    ]);
     return res.status(200).json({
       userId: volunteer.id,
       username: volunteer.username,
@@ -33,6 +36,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       mustChangePin: volunteer.mustChangePin,
       createdAt: volunteer.createdAt,
       points: history.reduce((sum, award) => sum + award.amount, 0),
+      byDepartment,
       history,
     });
   }

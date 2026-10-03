@@ -5,6 +5,10 @@ import { StandingCard } from "@/components/ranking";
 import { Section } from "@/components/section";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  DepartmentTotals,
+  type DepartmentTotal,
+} from "@/components/volunteers/department-totals";
+import {
   PointsHistory,
   type PointsAward,
 } from "@/components/volunteers/points-history";
@@ -15,6 +19,7 @@ interface MyPoints {
   points: number;
   rank: number | null;
   total: number;
+  byDepartment: DepartmentTotal[];
   history: PointsAward[];
 }
 
@@ -35,7 +40,7 @@ export default function PointsPage() {
     <AppShell
       user={user}
       title="My points"
-      description="Points you've earned volunteering with the team."
+      description="Points you've earned volunteering, and which team they count for."
     >
       {!data ? (
         <div className="space-y-6">
@@ -51,9 +56,12 @@ export default function PointsPage() {
             detail={
               data.rank
                 ? `${data.rank} of ${data.total} volunteers`
-                : "Not ranked yet"
+                : "No points yet"
             }
           />
+          <Section title="By department">
+            <DepartmentTotals rows={data.byDepartment} />
+          </Section>
           <Section title="History" count={data.history.length}>
             <PointsHistory
               awards={data.history}

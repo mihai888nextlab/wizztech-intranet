@@ -10,6 +10,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser } from "@/hooks/use-user";
 import { formatDuration } from "@/lib/format";
 import { isVolunteer } from "@/lib/roles";
+import {
+  DEPARTMENT_LABELS,
+  OVERALL_BOARD,
+  VOLUNTEER_DEPARTMENTS,
+  type LeaderboardBoard,
+} from "@/lib/volunteers";
 
 interface LeaderboardEntry {
   rank: number;
@@ -40,7 +46,7 @@ export default function LeaderboardPage() {
       <AppShell
         user={user}
         title="Leaderboard"
-        description="Volunteers ranked by points."
+        description="Volunteers ranked by points, overall and by department."
       >
         <VolunteerBoard userId={user.userId} />
       </AppShell>
@@ -140,27 +146,86 @@ function TeamBoard({ userId }: { userId: number }) {
   );
 }
 
+/**
+ * Five boards: everyone's total, then one per department counting only the
+ * points earned in it. Each is fetched when its tab is first opened rather
+ * than all five up front.
+ */
 function VolunteerBoard({ userId }: { userId: number }) {
+  const [board, setBoard] = useState<LeaderboardBoard>(OVERALL_BOARD);
+
+  return (
+    <Tabs
+      value={board}
+      onValueChange={(value) => value && setBoard(value as LeaderboardBoard)}
+      className="gap-5"
+    >
+      {/* Five tabs don't fit a phone, so the strip scrolls rather than wraps. */}
+      <TabsList className="h-9 w-full justify-start overflow-x-auto">
+        <TabsTrigger value={OVERALL_BOARD} className="shrink-0 px-4">
+          Overall
+        </TabsTrigger>
+        {VOLUNTEER_DEPARTMENTS.map((department) => (
+          <TabsTrigger key={department} value={department} className="shrink-0 px-4">
+            {DEPARTMENT_LABELS[department]}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+
+      <TabsContent value={OVERALL_BOARD}>
+        <DepartmentBoard board={OVERALL_BOARD} userId={userId} />
+      </TabsContent>
+      {VOLUNTEER_DEPARTMENTS.map((department) => (
+        <TabsContent key={department} value={department}>
+          <DepartmentBoard board={department} userId={userId} />
+        </TabsContent>
+      ))}
+    </Tabs>
+  );
+}
+
+function DepartmentBoard({
+  board,
+  userId,
+}: {
+  board: LeaderboardBoard;
+  userId: number;
+}) {
   const [entries, setEntries] = useState<VolunteerEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Each tab renders its own DepartmentBoard, so `board` never changes for a
+  // given instance and `loading` can simply start true — no need to reset it.
   useEffect(() => {
-    fetch("/api/volunteers/leaderboard")
+    let cancelled = false;
+    fetch(`/api/volunteers/leaderboard?board=${board}`)
       .then((res) => (res.ok ? res.json() : []))
-      .then(setEntries)
-      .finally(() => setLoading(false));
-  }, []);
+      .then((data) => {
+        if (!cancelled) setEntries(data);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [board]);
 
   const mine = entries.find((e) => e.userId === userId);
+  const label = board === OVERALL_BOARD ? "" : ` in ${DEPARTMENT_LABELS[board]}`;
 
   return (
     <div className="space-y-6">
       {mine && (
         <StandingCard
           rank={mine.rank}
-          title="Your standing"
+          title={board === OVERALL_BOARD ? "Your standing" : `Your ${DEPARTMENT_LABELS[board]} standing`}
           score={mine.points}
-          detail={`${mine.rank} of ${entries.length} volunteers`}
+          detail={
+            mine.rank === null
+              ? `No points yet${label}`
+              : `${mine.rank} of ${entries.length} volunteers${label}`
+          }
         />
       )}
 
@@ -169,8 +234,16 @@ function VolunteerBoard({ userId }: { userId: number }) {
       ) : entries.length === 0 ? (
         <EmptyState
           icon={HandHeart}
-          title="No volunteers yet"
-          description="Volunteers appear here once a volunteer manager adds them."
+          title={
+            board === OVERALL_BOARD
+              ? "No volunteers yet"
+              : `Nobody in ${DEPARTMENT_LABELS[board]} yet`
+          }
+          description={
+            board === OVERALL_BOARD
+              ? "Volunteers appear here once a volunteer manager adds them."
+              : "Volunteers show up here once they join this department or earn points in it."
+          }
         />
       ) : (
         <ListCard>

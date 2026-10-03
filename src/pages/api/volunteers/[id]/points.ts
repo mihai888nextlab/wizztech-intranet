@@ -29,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!parsed.ok) {
     return res.status(400).json({ error: parsed.error });
   }
-  const { amount, reason, eventId } = parsed.value;
+  const { amount, reason, department, eventId } = parsed.value;
 
   if (eventId !== null) {
     const event = await db.query.events.findFirst({ where: eq(events.id, eventId) });
@@ -42,6 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     userId: id,
     amount,
     reason,
+    department,
     eventId,
     awardedBy: session.userId,
   }).returning();

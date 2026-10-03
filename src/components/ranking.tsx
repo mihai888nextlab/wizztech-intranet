@@ -23,7 +23,8 @@ export function RankRow({
   detail,
   score,
 }: {
-  rank: number;
+  /** Null for someone yet to score; shown as "–" and never medalled. */
+  rank: number | null;
   fullName: string;
   isYou: boolean;
   /** Small line under the name, e.g. events and lab hours. */
@@ -35,10 +36,11 @@ export function RankRow({
       <span
         className={cn(
           "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums ring-1 ring-inset",
-          MEDALS[rank] ?? "bg-muted text-muted-foreground ring-transparent"
+          (rank !== null && MEDALS[rank]) ??
+            "bg-muted text-muted-foreground ring-transparent"
         )}
       >
-        {rank}
+        {rank ?? "–"}
       </span>
 
       <Avatar className="hidden size-8 sm:flex">

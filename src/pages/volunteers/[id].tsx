@@ -38,6 +38,10 @@ import {
   type PointsAward,
 } from "@/components/volunteers/points-history";
 import { BadgeCard } from "@/components/volunteers/badge-card";
+import {
+  DepartmentTotals,
+  type DepartmentTotal,
+} from "@/components/volunteers/department-totals";
 import { DepartmentCheckboxes } from "@/components/volunteers/department-checkboxes";
 import { useUser } from "@/hooks/use-user";
 import { formatDateRange } from "@/lib/format";
@@ -45,7 +49,9 @@ import { canManageVolunteers } from "@/lib/roles";
 import {
   DEFAULT_PIN,
   departmentLabel,
+  DEPARTMENT_LABELS,
   MAX_REASON_LENGTH,
+  VOLUNTEER_DEPARTMENTS,
   type VolunteerDepartment,
 } from "@/lib/volunteers";
 
@@ -58,6 +64,7 @@ interface VolunteerDetail {
   mustChangePin: boolean;
   createdAt: string;
   points: number;
+  byDepartment: DepartmentTotal[];
   history: PointsAward[];
 }
 
@@ -216,6 +223,9 @@ export default function VolunteerDetailPage() {
             <StatCard label="Points" value={volunteer.points} />
             <StatCard label="Awards" value={volunteer.history.length} />
           </div>
+          <Section title="By department">
+            <DepartmentTotals rows={volunteer.byDepartment} />
+          </Section>
           <Section title="History" count={volunteer.history.length}>
             <PointsHistory
               awards={volunteer.history}
@@ -282,6 +292,11 @@ function GivePointsDialog({
 }) {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
+  // Defaults to the volunteer's first department when they have one — the
+  // common case is crediting work on a team they're already on.
+  const [department, setDepartment] = useState<string>(
+    volunteer.departments[0] ?? ""
+  );
   const [eventId, setEventId] = useState(NO_EVENT);
   const [saving, setSaving] = useState(false);
 
@@ -295,6 +310,7 @@ function GivePointsDialog({
         body: JSON.stringify({
           amount,
           reason,
+          department,
           eventId: eventId === NO_EVENT ? null : eventId,
         }),
       });
@@ -303,7 +319,9 @@ function GivePointsDialog({
         toast.error(data.error || "Could not give those points");
         return;
       }
-      toast.success(`Points given to ${volunteer.fullName}`);
+      toast.success(
+        `${DEPARTMENT_LABELS[department as VolunteerDepartment]} points given to ${volunteer.fullName}`
+      );
       onOpenChange(false);
       setAmount("");
       setReason("");
@@ -358,6 +376,33 @@ function GivePointsDialog({
             />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="awardDepartment">Department</Label>
+            <Select
+              value={department}
+              onValueChange={(v) => v && setDepartment(v as string)}
+            >
+              <SelectTrigger id="awardDepartment" className="h-10 w-full">
+                <SelectValue placeholder="Which team was this for?" />
+              </SelectTrigger>
+              <SelectContent>
+                {VOLUNTEER_DEPARTMENTS.map((d) => (
+                  <SelectItem key={d} value={d}>
+                    <span>{DEPARTMENT_LABELS[d]}</span>
+                    {!volunteer.departments.includes(d) && (
+                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                        not on this team
+                      </span>
+                    )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Which board these points count on. Any team is allowed — someone
+              can help out a team they aren&apos;t on.
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="awardEvent">Event (optional)</Label>
             <Select
               value={eventId}
@@ -379,7 +424,11 @@ function GivePointsDialog({
               </SelectContent>
             </Select>
           </div>
-          <Button type="submit" className="h-10 w-full rounded-xl" disabled={saving}>
+          <Button
+            type="submit"
+            className="h-10 w-full rounded-xl"
+            disabled={saving || !department}
+          >
             {saving && <Spinner />}
             Give points
           </Button>
