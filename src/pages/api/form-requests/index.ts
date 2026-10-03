@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { desc } from "drizzle-orm";
 
 import { formRequestAssignees, formRequests, formRequestFields } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { currentRoles, getSession } from "@/lib/auth";
+import { isAdmin } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { parseFormRequestInput } from "@/lib/form-requests";
 import {
@@ -16,6 +17,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session.isLoggedIn) {
     return res.status(401).json({ error: "Not authenticated" });
   }
+  // Fresh from the database, not the cookie, so a role change applies at once.
+  const roles = await currentRoles(session);
 
   if (req.method === "GET") {
     const [all, totalUsers] = await Promise.all([
@@ -26,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       countUsers(),
     ]);
 
-    if (session.role === "admin") {
+    if (isAdmin(roles)) {
       return res.status(200).json(
         all.map((request) => shapeFormRequest(request, session, totalUsers))
       );
@@ -45,7 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "POST") {
-    if (session.role !== "admin") {
+    if (!isAdmin(roles)) {
       return res.status(403).json({ error: "Only admins can request answers" });
     }
 

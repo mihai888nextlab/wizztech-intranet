@@ -3,6 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { announcementForms } from "@/db/schema";
 import { db } from "@/lib/db";
 import { fieldOf } from "@/lib/forms";
+import { isAdmin } from "@/lib/roles";
 
 /*
   Server-only helpers for the field requests attached to an announcement.
@@ -72,16 +73,16 @@ type LinkedRow = {
  */
 export function shapeLinkedForms(
   rows: LinkedRow[],
-  viewer: { userId: number; role: string },
+  viewer: { userId: number; roles: readonly string[] },
   totalUsers: number
 ) {
-  const isAdmin = viewer.role === "admin";
+  const viewerIsAdmin = isAdmin(viewer.roles);
 
   return rows
     .map((row) => row.request)
     .filter((r): r is NonNullable<LinkedRow["request"]> => Boolean(r))
     .filter((r) => {
-      if (isAdmin) return true;
+      if (viewerIsAdmin) return true;
       return (
         r.audience === "all" ||
         r.assignees.some((a) => a.userId === viewer.userId)
@@ -91,7 +92,7 @@ export function shapeLinkedForms(
       ...request,
       fields: fields.map(fieldOf),
       assigneeCount: request.audience === "all" ? totalUsers : assignees.length,
-      ...(isAdmin
+      ...(viewerIsAdmin
         ? {
             submittedCount: submissions.length,
             approvedCount: submissions.filter((s) => s.status === "approved")

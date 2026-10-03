@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { eq } from "drizzle-orm";
 
 import { financeEntries, financeSeasons } from "@/db/schema";
-import { getSession, requireFinance } from "@/lib/auth";
+import { currentRoles, getSession, requireFinance } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseEntryInput, toRonBani } from "@/lib/finance";
 import { findCategory, findEntry, listEntries } from "@/lib/finance.server";
@@ -23,7 +23,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // see the paperwork behind it.
     return res
       .status(200)
-      .json(await listEntries(seasonId, { userId: session.userId, role: session.role }));
+      .json(
+        await listEntries(seasonId, {
+          userId: session.userId,
+          roles: await currentRoles(session),
+        })
+      );
   }
 
   if (req.method === "POST") {
@@ -63,7 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const entry = await findEntry(created.id, {
       userId: session.userId,
-      role: session.role,
+      roles: await currentRoles(session),
     });
     return res.status(201).json(entry);
   }

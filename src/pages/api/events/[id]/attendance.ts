@@ -1,8 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { attendance, events } from "@/db/schema";
+import { attendance, events, users } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { isVolunteer } from "@/lib/roles";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getSession(req, res);
@@ -19,12 +20,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!event) {
     return res.status(404).json({ error: "Event not found" });
   }
+  // Matches the event route: an event a volunteer can't see, they can't sign
+  // in to or read the attendee list of either.
+  if (isVolunteer(session.accountType) && !event.forVolunteers) {
+    return res.status(404).json({ error: "Event not found" });
+  }
 
   if (req.method === "GET") {
-    const records = await db.query.attendance.findMany({
-      where: eq(attendance.eventId, eventId),
-      with: { user: true },
-    });
+    // Name the columns. `with: { user: true }` handed every signed-in viewer
+    // the whole user row — password hash, roles and badge code included.
+    const records = await db
+      .select({
+        id: attendance.id,
+        signedInAt: attendance.signedInAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          fullName: users.fullName,
+        },
+      })
+      .from(attendance)
+      .innerJoin(users, eq(attendance.userId, users.id))
+      .where(eq(attendance.eventId, eventId));
     return res.status(200).json(records);
   }
 

@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { desc, sql } from "drizzle-orm";
 
 import { fileRequestAssignees, fileRequests, users } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { currentRoles, getSession } from "@/lib/auth";
+import { isAdmin } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { parseFileRequestInput } from "@/lib/file-requests";
 
@@ -11,6 +12,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session.isLoggedIn) {
     return res.status(401).json({ error: "Not authenticated" });
   }
+  // Fresh from the database, not the cookie, so a role change applies at once.
+  const roles = await currentRoles(session);
 
   if (req.method === "GET") {
     const all = await db.query.fileRequests.findMany({
@@ -40,7 +43,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from(users);
     const totalUsers = Number(count);
 
-    if (session.role === "admin") {
+    if (isAdmin(roles)) {
       return res.status(200).json(
         all.map(({ assignees, submissions, ...request }) => ({
           ...request,
@@ -70,7 +73,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "POST") {
-    if (session.role !== "admin") {
+    if (!isAdmin(roles)) {
       return res.status(403).json({ error: "Only admins can request files" });
     }
 

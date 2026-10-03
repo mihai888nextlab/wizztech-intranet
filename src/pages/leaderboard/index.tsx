@@ -35,7 +35,7 @@ export default function LeaderboardPage() {
   if (!user) return <AuthLoading />;
 
   // Volunteers only ever see their own ranking; the team's isn't theirs to see.
-  if (isVolunteer(user.role)) {
+  if (isVolunteer(user.accountType)) {
     return (
       <AppShell
         user={user}

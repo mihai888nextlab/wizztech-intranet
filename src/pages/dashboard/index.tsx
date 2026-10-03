@@ -59,14 +59,26 @@ import {
   formatTime,
   initialsOf,
 } from "@/lib/format";
-import { USER_ROLES } from "@/lib/roles";
+import {
+  isAdmin as hasAdminRole,
+  isOrganizer,
+  ROLE_DESCRIPTIONS,
+  ROLE_LABELS,
+  roleSummary,
+  TEAM_ROLES,
+  type AccountType,
+  type TeamRole,
+} from "@/lib/roles";
+import { departmentLabel } from "@/lib/volunteers";
 
 interface AppUser {
   id: number;
   username: string;
   fullName: string;
-  role: string;
-  isVolunteerManager: boolean;
+  accountType: string;
+  roles: TeamRole[];
+  departments: string[];
+  mustChangePin: boolean;
   createdAt: string;
 }
 
@@ -79,10 +91,13 @@ interface AppEvent {
   startTime: string;
   endTime: string;
   location: string | null;
+  forVolunteers: boolean;
 }
 
 interface DashboardStats {
   totalUsers?: number;
+  memberCount?: number;
+  volunteerCount?: number;
   totalEvents: number;
   totalAttendance: number;
   totalLabHours: number;
@@ -93,12 +108,12 @@ interface DashboardStats {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const user = useUser(["admin", "organizer"]);
+  const user = useUser((u) => isOrganizer(u.roles));
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [events, setEvents] = useState<AppEvent[]>([]);
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = hasAdminRole(user?.roles);
   // The URL is the source of truth for the tab, so /dashboard?tab=events links work.
   const tab =
     typeof router.query.tab === "string" ? router.query.tab : "overview";
@@ -111,7 +126,7 @@ export default function DashboardPage() {
     fetch("/api/events").then(async (r) => {
       if (r.ok) setEvents(await r.json());
     });
-    if (user.role === "admin") {
+    if (hasAdminRole(user.roles)) {
       fetch("/api/users").then(async (r) => {
         if (r.ok) setUsers(await r.json());
       });
@@ -209,17 +224,25 @@ function OverviewTab({ stats }: { stats: DashboardStats | null }) {
         />
       </div>
 
-      {stats.userRoleCounts && stats.userRoleCounts.length > 0 && (
+      {stats.memberCount !== undefined && (
         <div className="rounded-xl bg-card p-4 ring-1 ring-foreground/10">
-          <p className="font-heading text-sm font-medium">Members by role</p>
+          <p className="font-heading text-sm font-medium">
+            Who&apos;s on the roster
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {stats.userRoleCounts.map((r) => (
-              <Badge
-                key={r.role}
-                variant="outline"
-                className="h-7 gap-1.5 px-2.5 capitalize"
-              >
-                {r.role}
+            <Badge variant="secondary" className="h-7 gap-1.5 px-2.5">
+              Team
+              <span className="font-semibold tabular-nums">{stats.memberCount}</span>
+            </Badge>
+            <Badge variant="secondary" className="h-7 gap-1.5 px-2.5">
+              Volunteers
+              <span className="font-semibold tabular-nums">{stats.volunteerCount ?? 0}</span>
+            </Badge>
+            {/* Someone with two jobs is counted under both — these are the
+                people holding each role, not a breakdown of the roster. */}
+            {stats.userRoleCounts?.map((r) => (
+              <Badge key={r.role} variant="outline" className="h-7 gap-1.5 px-2.5">
+                {ROLE_LABELS[r.role as TeamRole] ?? r.role}
                 <span className="font-semibold tabular-nums">{r.count}</span>
               </Badge>
             ))}
@@ -316,13 +339,30 @@ function UsersTab({
                   {format(parseISO(u.createdAt), "MMM d, yyyy")}
                 </p>
               </div>
-              {u.isVolunteerManager && (
-                <Badge variant="secondary" className="hidden shrink-0 sm:inline-flex">
-                  Volunteer manager
+              {u.mustChangePin && (
+                <Badge
+                  variant="secondary"
+                  className="hidden shrink-0 sm:inline-flex"
+                  title="Still on the PIN someone else chose for them"
+                >
+                  PIN not set
                 </Badge>
               )}
-              <Badge variant="outline" className="shrink-0 capitalize">
-                {u.role}
+              {u.accountType === "volunteer" ? (
+                <Badge variant="secondary" className="shrink-0">
+                  {departmentLabel(u.departments)}
+                </Badge>
+              ) : (
+                // One badge per job, so "Organizer + Coordinator" reads as two
+                // things they do rather than one hyphenated rank.
+                u.roles.map((role) => (
+                  <Badge key={role} variant="outline" className="hidden shrink-0 sm:inline-flex">
+                    {ROLE_LABELS[role]}
+                  </Badge>
+                ))
+              )}
+              <Badge variant="outline" className="shrink-0 sm:hidden">
+                {roleSummary(u.accountType, u.roles)}
               </Badge>
               <RowMenu
                 onEdit={() => setEditing(u)}
@@ -400,6 +440,11 @@ function EventsTab({
                     {e.title}
                   </Link>
                   <StatusBadge status={eventStatus(e.startDate, e.endDate)} />
+                  {e.forVolunteers && (
+                    <Badge variant="secondary" className="shrink-0">
+                      Volunteers
+                    </Badge>
+                  )}
                 </div>
                 <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                   <span>{formatDateRange(e.startDate, e.endDate)}</span>
@@ -472,47 +517,74 @@ function RowMenu({
   );
 }
 
-function RoleSelect({
+/**
+ * Roles are a set, not a rank: running events and running the volunteers are
+ * different jobs, and plenty of people do both. Checkboxes say that where a
+ * dropdown used to imply you had to choose.
+ */
+function RoleCheckboxes({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: TeamRole[];
+  onChange: (value: TeamRole[]) => void;
+  disabled?: boolean;
+}) {
+  const toggle = (role: TeamRole, checked: boolean) =>
+    // Rebuilt from TEAM_ROLES so the stored order is always the canonical one.
+    onChange(
+      TEAM_ROLES.filter((r) => (r === role ? checked : value.includes(r)))
+    );
+
+  return (
+    <div className="space-y-2.5">
+      {TEAM_ROLES.map((role) => (
+        <Label key={role} className="flex items-start gap-2.5 font-normal">
+          <Checkbox
+            className="mt-0.5"
+            checked={value.includes(role)}
+            disabled={disabled}
+            onCheckedChange={(next) => toggle(role, next === true)}
+          />
+          <span>
+            <span className="text-sm font-medium text-foreground">
+              {ROLE_LABELS[role]}
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {ROLE_DESCRIPTIONS[role]}
+            </span>
+          </span>
+        </Label>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Member or volunteer. It isn't a role: a volunteer is an outsider who only
+ * ever sees the events opened to them, their badge and their points, so the
+ * choice closes off the whole app rather than opening part of it.
+ */
+function AccountTypeSelect({
   value,
   onChange,
   id,
 }: {
-  value: string;
-  onChange: (value: string) => void;
+  value: AccountType;
+  onChange: (value: AccountType) => void;
   id: string;
 }) {
   return (
-    <Select value={value} onValueChange={(v) => v && onChange(v as string)}>
+    <Select value={value} onValueChange={(v) => v && onChange(v as AccountType)}>
       <SelectTrigger id={id} className="h-10 w-full">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {USER_ROLES.map((role) => (
-          <SelectItem key={role} value={role} className="capitalize">
-            {role}
-          </SelectItem>
-        ))}
+        <SelectItem value="member">Team member</SelectItem>
+        <SelectItem value="volunteer">Volunteer</SelectItem>
       </SelectContent>
     </Select>
-  );
-}
-
-/** An extra permission on top of the role, so any member can hold it. */
-function VolunteerManagerCheckbox({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <Label className="flex items-center gap-2 font-normal">
-      <Checkbox
-        checked={checked}
-        onCheckedChange={(next) => onChange(next === true)}
-      />
-      Volunteer manager — can add volunteers and give them points
-    </Label>
   );
 }
 
@@ -525,9 +597,13 @@ function CreateUserDialog({
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<string>("member");
-  const [isVolunteerManager, setIsVolunteerManager] = useState(false);
+  const [accountType, setAccountType] = useState<AccountType>("member");
+  const [roles, setRoles] = useState<TeamRole[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // A volunteer's whole surface is the allow-list, so there is no job for them
+  // to hold; the API refuses the combination too.
+  const isVolunteerAccount = accountType === "volunteer";
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -540,8 +616,8 @@ function CreateUserDialog({
           username,
           fullName,
           password,
-          role,
-          isVolunteerManager,
+          accountType,
+          roles: isVolunteerAccount ? [] : roles,
         }),
       });
       if (!res.ok) {
@@ -555,8 +631,8 @@ function CreateUserDialog({
       setUsername("");
       setFullName("");
       setPassword("");
-      setRole("member");
-      setIsVolunteerManager(false);
+      setAccountType("member");
+      setRoles([]);
     } catch {
       toast.error("Connection error");
     } finally {
@@ -597,7 +673,7 @@ function CreateUserDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="pin">PIN (4 digits)</Label>
+            <Label htmlFor="pin">Starting PIN (4 digits)</Label>
             <Input
               id="pin"
               className="h-10 tracking-[0.4em] tabular-nums"
@@ -607,15 +683,24 @@ function CreateUserDialog({
               onChange={(e) => setPassword(e.target.value.replace(/\D/g, ""))}
               required
             />
+            <p className="text-xs text-muted-foreground">
+              They&apos;ll be asked to choose their own the first time they sign in.
+            </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
-            <RoleSelect id="role" value={role} onChange={setRole} />
+            <Label htmlFor="accountType">Account</Label>
+            <AccountTypeSelect
+              id="accountType"
+              value={accountType}
+              onChange={setAccountType}
+            />
           </div>
-          <VolunteerManagerCheckbox
-            checked={isVolunteerManager}
-            onChange={setIsVolunteerManager}
-          />
+          {!isVolunteerAccount && (
+            <div className="space-y-2">
+              <Label>Roles</Label>
+              <RoleCheckboxes value={roles} onChange={setRoles} />
+            </div>
+          )}
           <Button
             type="submit"
             className="h-10 w-full rounded-xl"
@@ -640,8 +725,7 @@ function EditUserDialog({
   onUpdated: (user: AppUser) => void;
 }) {
   const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState<string>("member");
-  const [isVolunteerManager, setIsVolunteerManager] = useState(false);
+  const [roles, setRoles] = useState<TeamRole[]>([]);
   const [saving, setSaving] = useState(false);
   const [loadedId, setLoadedId] = useState<number | null>(null);
 
@@ -649,9 +733,10 @@ function EditUserDialog({
   if (user && user.id !== loadedId) {
     setLoadedId(user.id);
     setFullName(user.fullName);
-    setRole(user.role);
-    setIsVolunteerManager(user.isVolunteerManager);
+    setRoles(user.roles);
   }
+
+  const isVolunteerAccount = user?.accountType === "volunteer";
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -661,7 +746,11 @@ function EditUserDialog({
       const res = await fetch(`/api/users/${user.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, role, isVolunteerManager }),
+        body: JSON.stringify(
+          // A volunteer's account type is changed from the Volunteers page,
+          // and they hold no roles, so only their name is editable here.
+          isVolunteerAccount ? { fullName } : { fullName, roles }
+        ),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -669,12 +758,7 @@ function EditUserDialog({
         return;
       }
       const updated = await res.json();
-      onUpdated({
-        ...user,
-        fullName: updated.fullName,
-        role: updated.role,
-        isVolunteerManager: updated.isVolunteerManager,
-      });
+      onUpdated({ ...user, ...updated });
       toast.success("Member updated");
       onOpenChange(false);
     } catch {
@@ -701,14 +785,17 @@ function EditUserDialog({
               required
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="editRole">Role</Label>
-            <RoleSelect id="editRole" value={role} onChange={setRole} />
-          </div>
-          <VolunteerManagerCheckbox
-            checked={isVolunteerManager}
-            onChange={setIsVolunteerManager}
-          />
+          {isVolunteerAccount ? (
+            <p className="text-xs text-muted-foreground">
+              A volunteer account. Their departments, PIN and points live on the
+              Volunteers page.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <Label>Roles</Label>
+              <RoleCheckboxes value={roles} onChange={setRoles} />
+            </div>
+          )}
           <Button
             type="submit"
             className="h-10 w-full rounded-xl"
@@ -736,6 +823,7 @@ function CreateEventDialog({
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("17:00");
   const [location, setLocation] = useState("");
+  const [forVolunteers, setForVolunteers] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -754,6 +842,7 @@ function CreateEventDialog({
           startTime,
           endTime,
           location: location || undefined,
+          forVolunteers,
         }),
       });
       if (!res.ok) {
@@ -771,6 +860,7 @@ function CreateEventDialog({
       setStartTime("09:00");
       setEndTime("17:00");
       setLocation("");
+      setForVolunteers(false);
     } catch {
       toast.error("Connection error");
     } finally {
@@ -855,6 +945,22 @@ function CreateEventDialog({
               onChange={(e) => setLocation(e.target.value)}
             />
           </div>
+          <Label className="flex items-start gap-2.5 font-normal">
+            <Checkbox
+              className="mt-0.5"
+              checked={forVolunteers}
+              onCheckedChange={(next) => setForVolunteers(next === true)}
+            />
+            <span>
+              <span className="text-sm font-medium text-foreground">
+                Open to volunteers
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Volunteers only see the events you tick here. The team sees
+                every event either way.
+              </span>
+            </span>
+          </Label>
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea

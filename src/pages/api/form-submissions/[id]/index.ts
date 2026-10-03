@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { eq } from "drizzle-orm";
 
 import { formSubmissions } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { currentRoles, getSession } from "@/lib/auth";
+import { isAdmin } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { parseReviewInput } from "@/lib/file-requests";
 import { notifySubmissionReviewed } from "@/lib/push-events";
@@ -12,6 +13,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session.isLoggedIn) {
     return res.status(401).json({ error: "Not authenticated" });
   }
+  // Fresh from the database, not the cookie, so a role change applies at once.
+  const roles = await currentRoles(session);
 
   const id = parseInt(req.query.id as string, 10);
   if (isNaN(id)) {
@@ -26,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "PATCH") {
-    if (session.role !== "admin") {
+    if (!isAdmin(roles)) {
       return res.status(403).json({ error: "Only admins can review submissions" });
     }
     const parsed = parseReviewInput(req.body);
@@ -63,7 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === "DELETE") {
     // Members may withdraw their own answers; admins may remove any.
     const isOwner = submission.userId === session.userId;
-    if (session.role !== "admin" && !isOwner) {
+    if (!isAdmin(roles) && !isOwner) {
       return res.status(403).json({ error: "Not allowed" });
     }
     await db.delete(formSubmissions).where(eq(formSubmissions.id, id));

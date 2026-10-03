@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { format, parseISO } from "date-fns";
 import { CalendarDays, LogOut, Moon, Sun, Timer } from "lucide-react";
 
+import { ChangePinCard } from "@/components/change-pin-card";
 import { AppShell, AuthLoading } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/empty-state";
 import { NotificationsCard } from "@/components/notifications-card";
@@ -17,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsClient } from "@/hooks/use-is-client";
 import { useUser } from "@/hooks/use-user";
 import { formatDateRange, formatDuration, initialsOf } from "@/lib/format";
+import { roleSummary } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 interface AttendedEvent {
@@ -84,8 +86,8 @@ export default function ProfilePage() {
             </h1>
             <p className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
               <span className="truncate">@{user.username}</span>
-              <Badge variant="outline" className="shrink-0 capitalize">
-                {user.role}
+              <Badge variant="outline" className="shrink-0">
+                {roleSummary(user.accountType, user.roles)}
               </Badge>
             </p>
           </div>
@@ -183,6 +185,8 @@ export default function ProfilePage() {
         </Tabs>
 
         <NotificationsCard />
+
+        <ChangePinCard />
 
         <AppearanceCard />
 

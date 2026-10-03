@@ -3,6 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { formRequestAssignees, users } from "@/db/schema";
 import { db } from "@/lib/db";
 import { fieldOf } from "@/lib/forms";
+import { isAdmin } from "@/lib/roles";
 
 /*
   Database-backed helpers for the form-request feature, kept apart from the
@@ -101,10 +102,10 @@ type DetailRow = {
  */
 export function shapeFormRequest(
   row: DetailRow,
-  viewer: { userId: number; role: string },
+  viewer: { userId: number; roles: readonly string[] },
   totalUsers: number
 ) {
-  const isAdmin = viewer.role === "admin";
+  const viewerIsAdmin = isAdmin(viewer.roles);
   const { assignees, submissions, fields, ...request } = row;
 
   return {
@@ -114,7 +115,7 @@ export function shapeFormRequest(
     ...(row.audience === "selected"
       ? { assigneeIds: assignees.map((a) => a.userId) }
       : {}),
-    ...(isAdmin
+    ...(viewerIsAdmin
       ? {
           submittedCount: submissions.length,
           approvedCount: submissions.filter((s) => s.status === "approved")

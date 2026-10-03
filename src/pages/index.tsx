@@ -23,9 +23,13 @@ export default function LoginPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    fetch("/api/auth/me").then((res) => {
-      if (res.ok) router.replace("/events");
-      else setChecking(false);
+    fetch("/api/auth/me").then(async (res) => {
+      if (!res.ok) {
+        setChecking(false);
+        return;
+      }
+      const data = await res.json();
+      router.replace(data.mustChangePin ? "/set-pin" : "/events");
     });
   }, [router]);
 
@@ -40,11 +44,13 @@ export default function LoginPage() {
         body: JSON.stringify({ username, password: pinValue }),
       });
 
+      const data = await res.json();
       if (res.ok) {
-        router.replace("/events");
+        // Somebody else picked their PIN, so they pick their own before
+        // anything else — see src/pages/set-pin.tsx.
+        router.replace(data.mustChangePin ? "/set-pin" : "/events");
         return;
       }
-      const data = await res.json();
       toast.error(data.error || "Login failed");
       setPin("");
     } catch {

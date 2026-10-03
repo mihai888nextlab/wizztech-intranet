@@ -190,16 +190,16 @@ const shapedRow = ledgerRow as any;
 
 for (const role of ["admin", "finance"]) {
   test(`${role} sees the documents behind an entry`, () => {
-    const shaped = shapeEntry(shapedRow, { userId: 1, role });
+    const shaped = shapeEntry(shapedRow, { userId: 1, roles: [role] });
     assert.equal(shaped.documentCount, 1);
     assert.equal(shaped.documents?.length, 1);
     assert.equal(shaped.documents?.[0].fileName, "invoice.pdf");
   });
 }
 
-for (const role of ["member", "volunteer", "organizer"]) {
-  test(`${role} gets the count but never the documents`, () => {
-    const shaped = shapeEntry(shapedRow, { userId: 2, role });
+for (const roles of [[], ["organizer"], ["coordinator"], ["organizer", "coordinator"]]) {
+  test(`${JSON.stringify(roles)} gets the count but never the documents`, () => {
+    const shaped = shapeEntry(shapedRow, { userId: 2, roles });
     assert.equal(shaped.documentCount, 1);
     assert.equal(shaped.documents, undefined);
     // Nothing that could be used to reach the object may appear anywhere in the
@@ -210,7 +210,7 @@ for (const role of ["member", "volunteer", "organizer"]) {
 }
 
 test("everyone still sees the money", () => {
-  const shaped = shapeEntry(shapedRow, { userId: 2, role: "member" });
+  const shaped = shapeEntry(shapedRow, { userId: 2, roles: [] });
   assert.equal(shaped.amountRonBani, 172829);
   assert.equal(shaped.currency, "EUR");
   assert.equal(shaped.categoryName, "Parts & materials");

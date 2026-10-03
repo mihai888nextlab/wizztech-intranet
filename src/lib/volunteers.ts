@@ -7,14 +7,81 @@
  * Everything a volunteer may reach. Anything not listed is refused, so a new
  * page or API route stays team-only until it is added here on purpose.
  */
-const VOLUNTEER_PAGES = [/^\/$/, /^\/events(\/.*)?$/, /^\/leaderboard$/, /^\/points$/];
+const VOLUNTEER_PAGES = [
+  /^\/$/,
+  /^\/set-pin$/,
+  /^\/badge$/,
+  /^\/events(\/.*)?$/,
+  /^\/leaderboard$/,
+  /^\/points$/,
+];
 const VOLUNTEER_APIS = [
   /^\/api\/auth\/.+$/,
-  // Creating and editing events is already organizer-only inside the handlers.
+  // Creating and editing events is already organizer-only inside the handlers,
+  // and the handlers hide events that aren't open to volunteers.
   /^\/api\/events(\/.*)?$/,
   /^\/api\/volunteers\/leaderboard$/,
-  /^\/api\/volunteers\/me$/,
+  // Their own badge, department and QR hang off /me. Another volunteer's id
+  // stays refused — only the literal "me" matches.
+  /^\/api\/volunteers\/me(\/.*)?$/,
 ];
+
+/**
+ * The teams a volunteer can be assigned to, and the order they're listed in.
+ * Stored as these slugs and shown through DEPARTMENT_LABELS, so renaming one
+ * for display never rewrites rows. A volunteer can be in any number of them.
+ */
+export const VOLUNTEER_DEPARTMENTS = [
+  "engineering",
+  "programming",
+  "media",
+  "marketing",
+] as const;
+
+export type VolunteerDepartment = (typeof VOLUNTEER_DEPARTMENTS)[number];
+
+export const DEPARTMENT_LABELS: Record<VolunteerDepartment, string> = {
+  engineering: "Engineering",
+  programming: "Programming",
+  media: "Media",
+  marketing: "Marketing",
+};
+
+export function isVolunteerDepartment(value: unknown): value is VolunteerDepartment {
+  return VOLUNTEER_DEPARTMENTS.includes(value as VolunteerDepartment);
+}
+
+/**
+ * Validates a `departments` array off a request body. Returns null rather than
+ * dropping the bad entry, so a coordinator who ticks something and sees it not
+ * apply gets told instead of guessing.
+ */
+export function parseDepartments(value: unknown): VolunteerDepartment[] | null {
+  if (!Array.isArray(value)) return null;
+  if (!value.every(isVolunteerDepartment)) return null;
+  // Rebuilt from the canonical list, so the stored order is always the same
+  // and a duplicate can't show up twice on the badge.
+  return VOLUNTEER_DEPARTMENTS.filter((d) => value.includes(d));
+}
+
+/**
+ * How someone's departments read on a badge or a list row: "Engineering ·
+ * Media". A volunteer who hasn't picked yet still needs a word, or the row
+ * looks broken.
+ */
+export function departmentLabel(values: readonly string[] | null | undefined) {
+  const held = VOLUNTEER_DEPARTMENTS.filter((d) => values?.includes(d));
+  return held.length > 0
+    ? held.map((d) => DEPARTMENT_LABELS[d]).join(" · ")
+    : "No department";
+}
+
+/** The default every volunteer account starts on, and may not keep. */
+export const DEFAULT_PIN = "0000";
+
+export function isValidPin(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}$/.test(value);
+}
 
 export function isVolunteerPathAllowed(pathname: string) {
   // Trailing slashes are equivalent to their bare path for routing.

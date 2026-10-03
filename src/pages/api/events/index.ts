@@ -1,8 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { events } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, requireOrganizer } from "@/lib/auth";
+import { isVolunteer } from "@/lib/roles";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getSession(req, res);
@@ -11,16 +12,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === "GET") {
-    const allEvents = await db.select().from(events).orderBy(desc(events.startDate));
+    // Volunteers only see what was opened to them; the team sees everything.
+    // An undefined `where` is a no-op in drizzle, so this needs no branch.
+    const allEvents = await db
+      .select()
+      .from(events)
+      .where(isVolunteer(session.accountType) ? eq(events.forVolunteers, true) : undefined)
+      .orderBy(desc(events.startDate));
     return res.status(200).json(allEvents);
   }
 
   if (req.method === "POST") {
-    if (session.role !== "admin" && session.role !== "organizer") {
+    if (!(await requireOrganizer(req, res))) {
       return res.status(403).json({ error: "Only admins and organizers can create events" });
     }
 
-    const { title, description, startDate, endDate, startTime, endTime, location } = req.body;
+    const { title, description, startDate, endDate, startTime, endTime, location, forVolunteers } = req.body;
     if (!title || !startDate || !endDate || !startTime || !endTime) {
       return res.status(400).json({ error: "Title, start date, end date, start time, and end time are required" });
     }
@@ -33,6 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       startTime,
       endTime,
       location,
+      forVolunteers: forVolunteers === true,
       createdBy: session.userId,
     }).returning();
 

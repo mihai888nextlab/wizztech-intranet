@@ -110,7 +110,7 @@ export default function EventDetailPage() {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={status} />
-                {isOrganizer(user.role) && (
+                {isOrganizer(user.roles) && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -180,7 +180,7 @@ export default function EventDetailPage() {
                   <p className="text-xs text-muted-foreground">
                     {!isSignedIn
                       ? "Sign in so your attendance gets recorded."
-                      : isVolunteer(user.role)
+                      : isVolunteer(user.accountType)
                         ? "Thanks for helping out."
                         : "Your attendance counts toward the leaderboard."}
                   </p>

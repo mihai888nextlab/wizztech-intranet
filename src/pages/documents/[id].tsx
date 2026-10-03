@@ -49,6 +49,7 @@ import {
 } from "@/lib/documents";
 import { formatBytes, initialsOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { isAdmin as hasAdminRole } from "@/lib/roles";
 
 type Detail = FileRequest & { roster?: RosterEntry[] };
 
@@ -72,7 +73,7 @@ export default function DocumentRequestPage() {
     ownerName?: string;
   } | null>(null);
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = hasAdminRole(user?.roles);
 
   useEffect(() => {
     if (!id) return;

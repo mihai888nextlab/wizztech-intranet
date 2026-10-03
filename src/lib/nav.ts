@@ -5,6 +5,7 @@ import {
   FileText,
   LayoutDashboard,
   Megaphone,
+  QrCode,
   Timer,
   Trophy,
   User,
@@ -20,6 +21,12 @@ export interface NavItem {
   /** Shown under the icon in the mobile tab bar, where space is tight. */
   short: string;
   icon: LucideIcon;
+}
+
+/** What the nav needs to know about whoever is looking at it. */
+interface NavUser {
+  accountType: string;
+  roles: readonly string[];
 }
 
 /**
@@ -58,6 +65,7 @@ export const VOLUNTEERS_NAV: NavItem = {
 /** Everything a volunteer can reach — see `isVolunteerPathAllowed`. */
 export const VOLUNTEER_NAV: NavItem[] = [
   { href: "/events", label: "Events", short: "Events", icon: CalendarDays },
+  { href: "/badge", label: "My badge", short: "Badge", icon: QrCode },
   { href: "/points", label: "My points", short: "Points", icon: Medal },
   { href: "/leaderboard", label: "Leaderboard", short: "Ranks", icon: Trophy },
 ];
@@ -65,23 +73,18 @@ export const VOLUNTEER_NAV: NavItem[] = [
 export { canManageVolunteers, isOrganizer, isVolunteer };
 
 /** The mobile tab bar: Dashboard is appended for organizers. */
-export function tabBarNavFor(role: string): NavItem[] {
-  if (isVolunteer(role)) return VOLUNTEER_NAV;
-  return isOrganizer(role) ? [...PRIMARY_NAV, DASHBOARD_NAV] : PRIMARY_NAV;
+export function tabBarNavFor(user: NavUser): NavItem[] {
+  if (isVolunteer(user.accountType)) return VOLUNTEER_NAV;
+  return isOrganizer(user.roles) ? [...PRIMARY_NAV, DASHBOARD_NAV] : PRIMARY_NAV;
 }
 
 /**
  * Wide screens also have room for Volunteers. On phones it lives in the
  * account menu instead — the tab bar is already full.
  */
-export function topBarNavFor(user: {
-  role: string;
-  isVolunteerManager: boolean;
-}): NavItem[] {
-  const items = tabBarNavFor(user.role);
-  return canManageVolunteers(user.role, user.isVolunteerManager)
-    ? [...items, VOLUNTEERS_NAV]
-    : items;
+export function topBarNavFor(user: NavUser): NavItem[] {
+  const items = tabBarNavFor(user);
+  return canManageVolunteers(user.roles) ? [...items, VOLUNTEERS_NAV] : items;
 }
 
 /** A nav item owns a route when the path is the item or a child of it. */

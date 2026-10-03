@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { announcements } from "@/db/schema";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { parseAnnouncementInput } from "@/lib/announcements";
 import {
   announcementDocumentsWith,
@@ -23,7 +23,7 @@ import {
 } from "@/lib/announcement-files";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await requireAuth(req, res, ["admin"]);
+  const session = await requireAdmin(req, res);
   if (!session) {
     return res.status(401).json({ error: "Unauthorized" });
   }

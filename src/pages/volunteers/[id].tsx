@@ -37,15 +37,25 @@ import {
   PointsHistory,
   type PointsAward,
 } from "@/components/volunteers/points-history";
+import { BadgeCard } from "@/components/volunteers/badge-card";
+import { DepartmentCheckboxes } from "@/components/volunteers/department-checkboxes";
 import { useUser } from "@/hooks/use-user";
 import { formatDateRange } from "@/lib/format";
 import { canManageVolunteers } from "@/lib/roles";
-import { MAX_REASON_LENGTH } from "@/lib/volunteers";
+import {
+  DEFAULT_PIN,
+  departmentLabel,
+  MAX_REASON_LENGTH,
+  type VolunteerDepartment,
+} from "@/lib/volunteers";
 
 interface VolunteerDetail {
   userId: number;
   username: string;
   fullName: string;
+  departments: string[];
+  /** Still on the PIN a coordinator chose for them. */
+  mustChangePin: boolean;
   createdAt: string;
   points: number;
   history: PointsAward[];
@@ -73,7 +83,7 @@ export default function VolunteerDetailPage() {
   const [deletingVolunteer, setDeletingVolunteer] = useState(false);
   const [deletingAward, setDeletingAward] = useState<PointsAward | null>(null);
   const allowed = user
-    ? canManageVolunteers(user.role, user.isVolunteerManager)
+    ? canManageVolunteers(user.roles)
     : false;
 
   const load = useCallback(
@@ -137,7 +147,7 @@ export default function VolunteerDetailPage() {
       title={volunteer?.fullName}
       description={
         volunteer &&
-        `@${volunteer.username} · volunteer since ${format(parseISO(volunteer.createdAt), "MMM d, yyyy")}`
+        `@${volunteer.username} · ${departmentLabel(volunteer.departments)} · since ${format(parseISO(volunteer.createdAt), "MMM d, yyyy")}`
       }
       action={
         volunteer && (
@@ -187,6 +197,21 @@ export default function VolunteerDetailPage() {
         </div>
       ) : (
         <div className="space-y-6">
+          {/* The same badge the volunteer sees, so a coordinator can print the
+              crew's badges ahead of an event. */}
+          <BadgeCard
+            fullName={volunteer.fullName}
+            username={volunteer.username}
+            departments={volunteer.departments}
+            points={volunteer.points}
+            qrSrc={`/api/volunteers/${volunteer.userId}/qr`}
+          />
+          {volunteer.mustChangePin && (
+            <p className="text-xs text-muted-foreground">
+              They&apos;re still on the PIN {DEFAULT_PIN} and will be asked to
+              choose their own the next time they sign in.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <StatCard label="Points" value={volunteer.points} />
             <StatCard label="Awards" value={volunteer.history.length} />
@@ -377,6 +402,9 @@ function EditVolunteerDialog({
 }) {
   const [fullName, setFullName] = useState(volunteer.fullName);
   const [password, setPassword] = useState("");
+  const [departments, setDepartments] = useState<VolunteerDepartment[]>(
+    volunteer.departments as VolunteerDepartment[]
+  );
   const [saving, setSaving] = useState(false);
   const [wasOpen, setWasOpen] = useState(open);
 
@@ -386,6 +414,7 @@ function EditVolunteerDialog({
     if (open) {
       setFullName(volunteer.fullName);
       setPassword("");
+      setDepartments(volunteer.departments as VolunteerDepartment[]);
     }
   }
 
@@ -396,7 +425,11 @@ function EditVolunteerDialog({
       const res = await fetch(`/api/volunteers/${volunteer.userId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, password: password || undefined }),
+        body: JSON.stringify({
+          fullName,
+          password: password || undefined,
+          departments,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -431,7 +464,14 @@ function EditVolunteerDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="editVolPin">New PIN</Label>
+            <Label>Departments</Label>
+            <DepartmentCheckboxes value={departments} onChange={setDepartments} />
+            <p className="text-xs text-muted-foreground">
+              As many as apply. They can change these themselves from their badge.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="editVolPin">Reset their PIN</Label>
             <Input
               id="editVolPin"
               className="h-10 tracking-[0.4em] tabular-nums"
@@ -441,6 +481,10 @@ function EditVolunteerDialog({
               value={password}
               onChange={(e) => setPassword(e.target.value.replace(/\D/g, ""))}
             />
+            <p className="text-xs text-muted-foreground">
+              Use {DEFAULT_PIN} for a fresh start. Either way they&apos;ll be asked
+              to choose their own next time they sign in.
+            </p>
           </div>
           <Button type="submit" className="h-10 w-full rounded-xl" disabled={saving}>
             {saving && <Spinner />}

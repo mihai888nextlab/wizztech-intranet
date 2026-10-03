@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { eq } from "drizzle-orm";
 
 import { fileSubmissions } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { currentRoles, getSession } from "@/lib/auth";
+import { isAdmin } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { isStorageConfigured, presignDownload } from "@/lib/storage";
 
@@ -19,6 +20,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session.isLoggedIn) {
     return res.status(401).json({ error: "Not authenticated" });
   }
+  // Fresh from the database, not the cookie, so a role change applies at once.
+  const roles = await currentRoles(session);
   if (!isStorageConfigured()) {
     return res.status(503).json({ error: "File storage is not configured" });
   }
@@ -35,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(404).json({ error: "Submission not found" });
   }
 
-  if (session.role !== "admin" && submission.userId !== session.userId) {
+  if (!isAdmin(roles) && submission.userId !== session.userId) {
     return res.status(403).json({ error: "Not allowed" });
   }
 

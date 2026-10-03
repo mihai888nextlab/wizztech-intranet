@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/db/schema";
 import { hashPassword, requireVolunteerManager } from "@/lib/auth";
+import { isValidPin, parseDepartments, type VolunteerDepartment } from "@/lib/volunteers";
 import { findVolunteer, pointsHistory } from "@/lib/volunteers.server";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -27,6 +28,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userId: volunteer.id,
       username: volunteer.username,
       fullName: volunteer.fullName,
+      departments: volunteer.departments,
+      // So a coordinator can see who still hasn't picked their own PIN.
+      mustChangePin: volunteer.mustChangePin,
       createdAt: volunteer.createdAt,
       points: history.reduce((sum, award) => sum + award.amount, 0),
       history,
@@ -35,16 +39,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === "PATCH") {
     const { fullName, password } = req.body;
-    const updateData: { fullName?: string; passwordHash?: string } = {};
+    const updateData: {
+      fullName?: string;
+      passwordHash?: string;
+      mustChangePin?: boolean;
+      departments?: VolunteerDepartment[];
+    } = {};
 
     if (typeof fullName === "string" && fullName.trim()) {
       updateData.fullName = fullName.trim();
     }
     if (password) {
-      if (!/^\d{4}$/.test(password)) {
+      if (!isValidPin(password)) {
         return res.status(400).json({ error: "PIN must be exactly 4 digits" });
       }
       updateData.passwordHash = await hashPassword(password);
+      // Somebody else chose it, so the volunteer picks again on next sign-in.
+      updateData.mustChangePin = true;
+    }
+    if (req.body?.departments !== undefined) {
+      const departments = parseDepartments(req.body.departments);
+      if (departments === null) {
+        return res.status(400).json({ error: "Invalid departments" });
+      }
+      updateData.departments = departments;
     }
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: "Nothing to update" });
@@ -59,6 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userId: updated.id,
       username: updated.username,
       fullName: updated.fullName,
+      departments: updated.departments,
     });
   }
 

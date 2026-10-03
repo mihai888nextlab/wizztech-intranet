@@ -1,7 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { users, attendance, labSessions } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -15,7 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       u.id,
       u.username,
       u.full_name,
-      u.role,
+      u.roles,
       COALESCE(a.event_count, 0) AS events_attended,
       COALESCE(l.total_minutes, 0) AS total_minutes
     FROM users u
@@ -31,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       GROUP BY user_id
     ) l ON l.user_id = u.id
     -- Volunteers have their own points-based ranking at /api/volunteers/leaderboard.
-    WHERE u.role <> 'volunteer'
+    WHERE u.account_type <> 'volunteer'
     ORDER BY (COALESCE(a.event_count, 0) * 60 + COALESCE(l.total_minutes, 0)) DESC
   `);
 
@@ -40,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     userId: row.id,
     username: row.username,
     fullName: row.full_name,
-    role: row.role,
+    roles: (row.roles ?? []) as string[],
     eventsAttended: Number(row.events_attended),
     totalMinutes: Number(row.total_minutes),
     score: Number(row.events_attended) * 60 + Number(row.total_minutes),

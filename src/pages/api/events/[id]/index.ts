@@ -2,7 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { events } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, requireOrganizer } from "@/lib/auth";
+import { isVolunteer } from "@/lib/roles";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getSession(req, res);
@@ -18,16 +19,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === "GET") {
     const event = await db.query.events.findFirst({ where: eq(events.id, id) });
     if (!event) return res.status(404).json({ error: "Event not found" });
+    // A team event a volunteer was never shown shouldn't become visible just
+    // because they guessed the id — so it reads as missing, not as forbidden.
+    if (isVolunteer(session.accountType) && !event.forVolunteers) {
+      return res.status(404).json({ error: "Event not found" });
+    }
     return res.status(200).json(event);
   }
 
-  if (session.role !== "admin" && session.role !== "organizer") {
+  if (!(await requireOrganizer(req, res))) {
     return res.status(403).json({ error: "Unauthorized" });
   }
 
   if (req.method === "PATCH") {
-    const { title, description, startDate, endDate, startTime, endTime, location } = req.body;
-    const updateData: Record<string, string> = {};
+    const { title, description, startDate, endDate, startTime, endTime, location, forVolunteers } = req.body;
+    const updateData: Record<string, string | boolean> = {};
     if (title) updateData.title = title;
     if (description !== undefined) updateData.description = description;
     if (startDate) updateData.startDate = startDate;
@@ -35,6 +41,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (startTime) updateData.startTime = startTime;
     if (endTime) updateData.endTime = endTime;
     if (location !== undefined) updateData.location = location;
+    if (forVolunteers !== undefined) updateData.forVolunteers = forVolunteers === true;
 
     const [updated] = await db.update(events)
       .set(updateData)

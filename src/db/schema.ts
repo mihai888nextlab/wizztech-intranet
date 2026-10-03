@@ -6,12 +6,34 @@ export const users = pgTable("users", {
   username: varchar("username", { length: 50 }).unique().notNull(),
   fullName: varchar("full_name", { length: 100 }).notNull(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
-  role: varchar("role", { length: 20 }).notNull().default("member"),
   /**
-   * An extra permission on top of `role`, not a role of its own: a member who
-   * also runs the volunteers keeps everything a member has.
+   * "member" | "volunteer". A volunteer is an outsider who helps at events;
+   * every route they may reach is allow-listed in `src/lib/volunteers.ts`.
    */
-  isVolunteerManager: boolean("is_volunteer_manager").notNull().default(false),
+  accountType: varchar("account_type", { length: 20 }).notNull().default("member"),
+  /**
+   * The jobs this person holds, in any combination — running the volunteers
+   * and creating events are different jobs that often land on the same person.
+   * Empty for a plain member. See `TEAM_ROLES` in `src/lib/roles.ts`.
+   */
+  roles: varchar("roles", { length: 30 }).array().notNull().default([]),
+  /**
+   * Set when somebody else chose this person's PIN — a volunteer starts on
+   * 0000, which everyone knows — and cleared once they pick their own.
+   */
+  mustChangePin: boolean("must_change_pin").notNull().default(false),
+  /**
+   * Which sides of the team a volunteer helps on — several, often: the person
+   * filming the match is frequently the one writing the post about it. Empty
+   * until they or a coordinator pick. See `VOLUNTEER_DEPARTMENTS`.
+   */
+  departments: varchar("departments", { length: 20 }).array().notNull().default([]),
+  /**
+   * The payload behind a volunteer's badge QR: a random token rather than the
+   * user id, so a scanned code cannot be guessed or counted up to. Null until
+   * the badge is first drawn — see `ensureBadgeCode`.
+   */
+  badgeCode: varchar("badge_code", { length: 32 }).unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -24,6 +46,11 @@ export const events = pgTable("events", {
   startTime: time("start_time").notNull(),
   endTime: time("end_time").notNull(),
   location: varchar("location", { length: 200 }),
+  /**
+   * Volunteers only see the events ticked for them; the team sees every event.
+   * Defaults to false so a new event is team-only until someone says otherwise.
+   */
+  forVolunteers: boolean("for_volunteers").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

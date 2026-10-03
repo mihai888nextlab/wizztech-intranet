@@ -63,6 +63,7 @@ import { MAX_SIZE_MB_LIMIT, TITLE_MAX } from "@/lib/file-requests";
 import { formatBytes } from "@/lib/format";
 import { formStatusOf, type FormRequest } from "@/lib/forms";
 import { cn } from "@/lib/utils";
+import { isAdmin as hasAdminRole } from "@/lib/roles";
 
 export default function DocumentsPage() {
   const router = useRouter();
@@ -81,7 +82,7 @@ export default function DocumentsPage() {
   const [formEditing, setFormEditing] = useState<FormRequest | null>(null);
   const [formDeleting, setFormDeleting] = useState<FormRequest | null>(null);
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = hasAdminRole(user?.roles);
 
   // The URL is the source of truth for the tab, so ?tab=fields links work.
   const tab =

@@ -42,6 +42,7 @@ import {
 } from "@/lib/forms";
 import { initialsOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { isAdmin as hasAdminRole } from "@/lib/roles";
 
 type Detail = FormRequest & { roster?: FormRosterEntry[] };
 
@@ -66,7 +67,7 @@ export default function FormRequestPage() {
   } | null>(null);
   const [filling, setFilling] = useState(false);
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = hasAdminRole(user?.roles);
 
   useEffect(() => {
     if (!id) return;

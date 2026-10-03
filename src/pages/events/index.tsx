@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
-import { CalendarDays, Clock, MapPin, Plus } from "lucide-react";
+import { CalendarDays, ChevronRight, Clock, MapPin, Plus } from "lucide-react";
 
 import { AppShell, AuthLoading } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,7 +17,8 @@ import {
   formatTime,
   todayISO,
 } from "@/lib/format";
-import { isOrganizer } from "@/lib/nav";
+import { isOrganizer, isVolunteer } from "@/lib/nav";
+import { departmentLabel } from "@/lib/volunteers";
 
 interface EventRecord {
   id: number;
@@ -27,6 +29,7 @@ interface EventRecord {
   startTime: string;
   endTime: string;
   location: string | null;
+  forVolunteers: boolean;
 }
 
 export default function EventsPage() {
@@ -43,6 +46,9 @@ export default function EventsPage() {
 
   if (!user) return <AuthLoading />;
 
+  // For a volunteer every event they can see is one that was opened to them,
+  // so the badge would be on all of them — noise rather than information.
+  const showAudience = !isVolunteer(user.accountType);
   const today = todayISO();
   const upcoming = events.filter((e) => e.endDate >= today);
   const past = events.filter((e) => e.endDate < today).reverse();
@@ -53,7 +59,7 @@ export default function EventsPage() {
       title="Events"
       description="Competitions, meetings and workshops."
       action={
-        isOrganizer(user.role) && (
+        isOrganizer(user.roles) && (
           <Button
             size="lg"
             nativeButton={false}
@@ -64,6 +70,26 @@ export default function EventsPage() {
         )
       }
     >
+      {/* A volunteer's landing page, so their badge is one tap from it. */}
+      {!showAudience && (
+        <Link
+          href="/badge"
+          className="mb-5 flex items-center gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10 transition-all outline-none hover:ring-foreground/20 focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <div className="shrink-0 rounded-md bg-white p-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/api/volunteers/me/qr" alt="" className="size-10" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{user.fullName}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {departmentLabel(user.departments)} · Open my badge
+            </p>
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
+
       <Tabs defaultValue="upcoming" className="gap-5">
         <TabsList className="h-9 w-full sm:w-auto">
           <TabsTrigger value="upcoming" className="px-4">
@@ -90,7 +116,7 @@ export default function EventsPage() {
               description="Nothing on the calendar yet. Check back soon."
             />
           ) : (
-            <EventGrid events={upcoming} />
+            <EventGrid events={upcoming} showAudience={showAudience} />
           )}
         </TabsContent>
 
@@ -104,7 +130,7 @@ export default function EventsPage() {
               description="Events show up here once they have wrapped."
             />
           ) : (
-            <EventGrid events={past} />
+            <EventGrid events={past} showAudience={showAudience} />
           )}
         </TabsContent>
       </Tabs>
@@ -112,17 +138,29 @@ export default function EventsPage() {
   );
 }
 
-function EventGrid({ events }: { events: EventRecord[] }) {
+function EventGrid({
+  events,
+  showAudience,
+}: {
+  events: EventRecord[];
+  showAudience: boolean;
+}) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {events.map((event) => (
-        <EventCard key={event.id} event={event} />
+        <EventCard key={event.id} event={event} showAudience={showAudience} />
       ))}
     </div>
   );
 }
 
-function EventCard({ event }: { event: EventRecord }) {
+function EventCard({
+  event,
+  showAudience,
+}: {
+  event: EventRecord;
+  showAudience: boolean;
+}) {
   const status = eventStatus(event.startDate, event.endDate);
   const start = parseISO(event.startDate);
   const multiDay = event.startDate !== event.endDate;
@@ -146,7 +184,12 @@ function EventCard({ event }: { event: EventRecord }) {
           <h3 className="font-heading leading-snug font-medium text-pretty transition-colors group-hover:text-primary">
             {event.title}
           </h3>
-          <StatusBadge status={status} />
+          <div className="flex shrink-0 items-center gap-1.5">
+            {showAudience && event.forVolunteers && (
+              <Badge variant="secondary">Volunteers</Badge>
+            )}
+            <StatusBadge status={status} />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

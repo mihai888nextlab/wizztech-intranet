@@ -3,47 +3,17 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { pgTable, serial, varchar, timestamp, date, time, text, integer, boolean } from "drizzle-orm/pg-core";
 
-const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: varchar("username", { length: 50 }).unique().notNull(),
-  fullName: varchar("full_name", { length: 100 }).notNull(),
-  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
-  role: varchar("role", { length: 20 }).notNull().default("member"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-const events = pgTable("events", {
-  id: serial("id").primaryKey(),
-  title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date").notNull(),
-  startTime: time("start_time").notNull(),
-  endTime: time("end_time").notNull(),
-  location: varchar("location", { length: 255 }),
-  createdBy: serial("created_by").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-const financeSeasons = pgTable("finance_seasons", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 100 }).unique().notNull(),
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date").notNull(),
-  isCurrent: boolean("is_current").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-const financeCategories = pgTable("finance_categories", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 60 }).notNull(),
-  kind: varchar("kind", { length: 10 }).notNull(),
-  colorIndex: integer("color_index").notNull().default(1),
-  archivedAt: timestamp("archived_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+// Imported rather than redeclared: the local copies that used to live here had
+// drifted from the real schema (varchar(255) where the table says 200, a
+// non-null created_by where the column is nullable), so a seed could write
+// rows the app itself would never produce.
+import {
+  events,
+  financeCategories,
+  financeSeasons,
+  users,
+} from "../db/schema";
 
 async function ensureAdmin(db: ReturnType<typeof drizzle>) {
   const username = process.env.ADMIN_USERNAME || "admin";
@@ -66,14 +36,19 @@ async function ensureAdmin(db: ReturnType<typeof drizzle>) {
     username,
     fullName,
     passwordHash,
-    role: "admin",
+    accountType: "member",
+    roles: ["admin"],
+    // The seeded admin is the way in on a fresh install, so it keeps the PIN
+    // it was given rather than being bounced to /set-pin before anyone exists
+    // who could reset it.
+    mustChangePin: false,
   }).returning();
 
   console.log(`Admin user created:`);
   console.log(`  Username: ${user.username}`);
   console.log(`  Full Name: ${user.fullName}`);
   console.log(`  PIN: ${password}`);
-  console.log(`  Role: ${user.role}`);
+  console.log(`  Roles: ${user.roles.join(", ")}`);
   return user.id;
 }
 
@@ -114,6 +89,9 @@ async function seedEvents(db: ReturnType<typeof drizzle>, adminId: number) {
       startTime: "11:00",
       endTime: "15:00",
       location: "Downtown Library",
+      // Outreach is where volunteers help, so this is the one that shows up
+      // for them — the other two stay team-only.
+      forVolunteers: true,
     },
   ];
 

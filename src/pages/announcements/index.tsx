@@ -41,6 +41,7 @@ import type { FileRequest, Submission } from "@/lib/documents";
 import type { FormRequest, FormSubmission } from "@/lib/forms";
 import { announcementShareText } from "@/lib/share";
 import { initialsOf } from "@/lib/format";
+import { isAdmin as hasAdminRole } from "@/lib/roles";
 
 interface Announcement {
   id: number;
@@ -74,7 +75,7 @@ export default function AnnouncementsPage() {
   }, []);
 
   useEffect(() => {
-    if (user?.role !== "admin") return;
+    if (!hasAdminRole(user?.roles)) return;
     Promise.all([
       fetch("/api/file-requests").then((res) => (res.ok ? res.json() : [])),
       fetch("/api/form-requests").then((res) => (res.ok ? res.json() : [])),
@@ -82,7 +83,7 @@ export default function AnnouncementsPage() {
       setRequests(fileRequests);
       setFormRequests(forms);
     });
-  }, [user?.role]);
+  }, [user?.roles]);
 
   // The list is fetched client-side, so the browser cannot act on the hash by
   // itself — scroll once the target card actually exists.
@@ -103,7 +104,7 @@ export default function AnnouncementsPage() {
 
   if (!user) return <AuthLoading />;
 
-  const isAdmin = user.role === "admin";
+  const isAdmin = hasAdminRole(user.roles);
 
   const openShare = (announcement: Announcement) =>
     setSharing(

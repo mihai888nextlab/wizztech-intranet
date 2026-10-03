@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { authenticateUser, getSession } from "@/lib/auth";
-import type { UserRole } from "@/lib/roles";
+import type { AccountType, TeamRole } from "@/lib/roles";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -21,7 +21,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   session.userId = user.id;
   session.username = user.username;
   session.fullName = user.fullName;
-  session.role = user.role as UserRole;
+  session.accountType = user.accountType as AccountType;
+  session.roles = user.roles as TeamRole[];
   session.isLoggedIn = true;
   await session.save();
 
@@ -29,6 +30,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     userId: user.id,
     username: user.username,
     fullName: user.fullName,
-    role: user.role,
+    accountType: user.accountType,
+    roles: user.roles,
+    // The login page sends them straight to /set-pin when this is true, so
+    // somebody else's choice of PIN never becomes their permanent one.
+    mustChangePin: user.mustChangePin,
   });
 }

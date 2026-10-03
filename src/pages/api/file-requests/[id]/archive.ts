@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { ZipArchive } from "archiver";
 
 import { fileRequests } from "@/db/schema";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getObjectStream, isStorageConfigured } from "@/lib/storage";
 
@@ -34,7 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const session = await requireAuth(req, res, ["admin"]);
+  const session = await requireAdmin(req, res);
   if (!session) {
     return res.status(401).json({ error: "Unauthorized" });
   }

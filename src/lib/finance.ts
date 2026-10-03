@@ -345,7 +345,7 @@ function asDate(value: unknown): string | null {
 
 export interface Viewer {
   userId: number;
-  role: string;
+  roles: readonly string[];
 }
 
 export interface FinanceDocumentView {
@@ -410,7 +410,7 @@ export function shapeEntry(row: EntryRow, viewer: Viewer): FinanceEntryView {
     documentCount: row.documents.length,
   };
 
-  if (!canViewFinanceDocuments(viewer.role)) return base;
+  if (!canViewFinanceDocuments(viewer.roles)) return base;
 
   return {
     ...base,

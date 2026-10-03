@@ -85,7 +85,7 @@ interface Summary {
 export default function FinancePage() {
   const router = useRouter();
   const user = useUser();
-  const canEdit = canEditFinance(user?.role ?? "");
+  const canEdit = canEditFinance(user?.roles);
 
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);

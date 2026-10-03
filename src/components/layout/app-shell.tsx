@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -32,6 +33,7 @@ import {
   tabBarNavFor,
   topBarNavFor,
 } from "@/lib/nav";
+import { roleSummary } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 interface AppShellProps {
@@ -175,29 +177,36 @@ function AccountMenu({ user }: { user: SessionUser }) {
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="py-1.5">
-          <span className="block truncate text-sm font-medium text-foreground">
-            {user.fullName}
-          </span>
-          <span className="block truncate text-xs font-normal text-muted-foreground capitalize">
-            @{user.username} · {user.role}
-          </span>
-        </DropdownMenuLabel>
+        {/*
+          The label has to sit inside a group: it renders Base UI's
+          Menu.GroupLabel, which reads a context only Menu.Group provides and
+          throws without one.
+        */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="py-1.5">
+            <span className="block truncate text-sm font-medium text-foreground">
+              {user.fullName}
+            </span>
+            <span className="block truncate text-xs font-normal text-muted-foreground">
+              @{user.username} · {roleSummary(user.accountType, user.roles)}
+            </span>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        {/* Volunteers have no profile page; their points page stands in for it. */}
-        {!isVolunteer(user.role) && (
-          <DropdownMenuItem onClick={() => router.push("/profile")}>
-            <UserIcon /> Profile
-          </DropdownMenuItem>
-        )}
+        {/* A volunteer's badge page is their profile — name, department, PIN. */}
+        <DropdownMenuItem
+          onClick={() => router.push(isVolunteer(user.accountType) ? "/badge" : "/profile")}
+        >
+          <UserIcon /> {isVolunteer(user.accountType) ? "My badge" : "Profile"}
+        </DropdownMenuItem>
         {/* Dashboard is here too — on phones it also appears in the tab bar. */}
-        {isOrganizer(user.role) && (
+        {isOrganizer(user.roles) && (
           <DropdownMenuItem onClick={() => router.push("/dashboard")}>
             <LayoutDashboard /> Dashboard
           </DropdownMenuItem>
         )}
         {/* The only way to Volunteers on a phone — it isn't in the tab bar. */}
-        {canManageVolunteers(user.role, user.isVolunteerManager) && (
+        {canManageVolunteers(user.roles) && (
           <DropdownMenuItem onClick={() => router.push("/volunteers")}>
             <HandHeart /> Volunteers
           </DropdownMenuItem>
@@ -214,7 +223,7 @@ function AccountMenu({ user }: { user: SessionUser }) {
 /** Fixed bottom navigation — the primary way around the app on a phone. */
 function TabBar({ user }: { user: SessionUser }) {
   const router = useRouter();
-  const items = tabBarNavFor(user.role);
+  const items = tabBarNavFor(user);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 chrome-blur pb-safe lg:hidden">

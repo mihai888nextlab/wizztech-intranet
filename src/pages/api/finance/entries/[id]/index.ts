@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { eq } from "drizzle-orm";
 
 import { financeEntries, financeSeasons } from "@/db/schema";
-import { requireFinance } from "@/lib/auth";
+import { currentRoles, requireFinance } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseEntryInput, toRonBani } from "@/lib/finance";
 import { deleteEntry, findCategory, findEntry } from "@/lib/finance.server";
@@ -53,7 +53,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
       .where(eq(financeEntries.id, id));
 
-    const entry = await findEntry(id, { userId: session.userId, role: session.role });
+    const entry = await findEntry(id, {
+      userId: session.userId,
+      roles: await currentRoles(session),
+    });
     return res.status(200).json(entry);
   }
 

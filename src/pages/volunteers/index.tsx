@@ -20,14 +20,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { DepartmentCheckboxes } from "@/components/volunteers/department-checkboxes";
 import { useUser } from "@/hooks/use-user";
 import { initialsOf } from "@/lib/format";
 import { canManageVolunteers } from "@/lib/roles";
+import {
+  DEFAULT_PIN,
+  departmentLabel,
+  type VolunteerDepartment,
+} from "@/lib/volunteers";
 
 interface Volunteer {
   userId: number;
   username: string;
   fullName: string;
+  departments: string[];
   points: number;
   rank: number;
   awards: number;
@@ -38,7 +45,7 @@ export default function VolunteersPage() {
   const user = useUser();
   const [volunteers, setVolunteers] = useState<Volunteer[] | null>(null);
   const allowed = user
-    ? canManageVolunteers(user.role, user.isVolunteerManager)
+    ? canManageVolunteers(user.roles)
     : false;
 
   useEffect(() => {
@@ -93,8 +100,8 @@ export default function VolunteersPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{v.fullName}</p>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    @{v.username} · #{v.rank} · {v.awards} award
-                    {v.awards === 1 ? "" : "s"}
+                    @{v.username} · {departmentLabel(v.departments)} · {v.awards}{" "}
+                    award{v.awards === 1 ? "" : "s"}
                   </p>
                 </div>
                 <span className="shrink-0 font-heading text-base font-semibold tabular-nums">
@@ -114,7 +121,7 @@ function AddVolunteerDialog({ onCreated }: { onCreated: (id: number) => void }) 
   const [open, setOpen] = useState(false);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [departments, setDepartments] = useState<VolunteerDepartment[]>([]);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -124,14 +131,18 @@ function AddVolunteerDialog({ onCreated }: { onCreated: (id: number) => void }) 
       const res = await fetch("/api/volunteers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, fullName, password }),
+        body: JSON.stringify({
+          username,
+          fullName,
+          departments,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || "Could not add that volunteer");
         return;
       }
-      toast.success("Volunteer added");
+      toast.success(`Volunteer added — their PIN is ${DEFAULT_PIN}`);
       setOpen(false);
       onCreated(data.userId);
     } catch {
@@ -174,20 +185,17 @@ function AddVolunteerDialog({ onCreated }: { onCreated: (id: number) => void }) 
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="volPin">PIN (4 digits)</Label>
-            <Input
-              id="volPin"
-              className="h-10 tracking-[0.4em] tabular-nums"
-              inputMode="numeric"
-              maxLength={4}
-              value={password}
-              onChange={(e) => setPassword(e.target.value.replace(/\D/g, ""))}
-              required
-            />
+            <Label>Departments</Label>
+            <DepartmentCheckboxes value={departments} onChange={setDepartments} />
             <p className="text-xs text-muted-foreground">
-              They sign in with this username and PIN.
+              Optional, and as many as apply — they can change these themselves
+              from their badge.
             </p>
           </div>
+          <p className="text-xs text-muted-foreground">
+            They sign in with this username and the PIN {DEFAULT_PIN}, then
+            choose their own before they can go any further.
+          </p>
           <Button type="submit" className="h-10 w-full rounded-xl" disabled={saving}>
             {saving && <Spinner />}
             Add volunteer

@@ -9,6 +9,7 @@ import {
   type PointsAward,
 } from "@/components/volunteers/points-history";
 import { useUser } from "@/hooks/use-user";
+import { isVolunteer } from "@/lib/roles";
 
 interface MyPoints {
   points: number;
@@ -18,7 +19,7 @@ interface MyPoints {
 }
 
 export default function PointsPage() {
-  const user = useUser(["volunteer"]);
+  const user = useUser((u) => isVolunteer(u.accountType));
   const [data, setData] = useState<MyPoints | null>(null);
 
   useEffect(() => {

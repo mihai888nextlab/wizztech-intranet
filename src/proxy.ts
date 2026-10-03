@@ -6,10 +6,11 @@ import { sessionOptions, type SessionData } from "@/lib/session";
 import { isVolunteerPathAllowed } from "@/lib/volunteers";
 
 /*
-  Volunteers see events, their points and the volunteer leaderboard — nothing
-  else. Enforcing that here, against an allow-list, covers every page and API
-  route at once, including ones added later. Everyone else passes straight
-  through to the per-route checks they already had.
+  Volunteers see the events opened to them, their badge, their points and the
+  volunteer leaderboard — nothing else. Enforcing that here, against an
+  allow-list, covers every page and API route at once, including ones added
+  later. Everyone else passes straight through to the per-route checks they
+  already had.
 */
 export async function proxy(request: NextRequest) {
   const cookie = request.cookies.get(sessionOptions.cookieName)?.value;
@@ -25,7 +26,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!session.isLoggedIn || !session.role || !isVolunteer(session.role)) {
+  if (!session.isLoggedIn || !isVolunteer(session.accountType)) {
     return NextResponse.next();
   }
 
