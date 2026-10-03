@@ -400,6 +400,7 @@ function EventsTab({
   events: AppEvent[];
   setEvents: (e: AppEvent[]) => void;
 }) {
+  const [editing, setEditing] = useState<AppEvent | null>(null);
   const [deleting, setDeleting] = useState<AppEvent | null>(null);
 
   const handleDelete = async () => {
@@ -463,11 +464,22 @@ function EventsTab({
                   )}
                 </p>
               </div>
-              <RowMenu onDelete={() => setDeleting(e)} />
+              <RowMenu
+                onEdit={() => setEditing(e)}
+                onDelete={() => setDeleting(e)}
+              />
             </ListRow>
           ))}
         </ListCard>
       )}
+
+      <EditEventDialog
+        event={editing}
+        onOpenChange={(open) => !open && setEditing(null)}
+        onUpdated={(updated) =>
+          setEvents(events.map((e) => (e.id === updated.id ? updated : e)))
+        }
+      />
 
       <ConfirmDialog
         open={deleting !== null}
@@ -810,20 +822,187 @@ function EditUserDialog({
   );
 }
 
+/*
+  Creating and editing an event are the same eight fields, so they share one
+  set of inputs and one shape of state. The dialogs differ only in where the
+  values start and which verb they send.
+*/
+
+interface EventForm {
+  title: string;
+  description: string;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  forVolunteers: boolean;
+}
+
+/** A plausible afternoon, so a new event needs fewer taps to become real. */
+const BLANK_EVENT: EventForm = {
+  title: "",
+  description: "",
+  startDate: "",
+  endDate: "",
+  startTime: "09:00",
+  endTime: "17:00",
+  location: "",
+  forVolunteers: false,
+};
+
+function eventToForm(event: AppEvent): EventForm {
+  return {
+    title: event.title,
+    description: event.description ?? "",
+    startDate: event.startDate,
+    endDate: event.endDate,
+    // Postgres hands back "08:30:00", which a time input renders as "08:30" —
+    // trimmed so the control and the state it is bound to agree.
+    startTime: event.startTime.slice(0, 5),
+    endTime: event.endTime.slice(0, 5),
+    location: event.location ?? "",
+    forVolunteers: event.forVolunteers,
+  };
+}
+
+function EventFields({
+  value,
+  onChange,
+  /** Both dialogs can be mounted at once, so their input ids must not collide. */
+  idPrefix,
+}: {
+  value: EventForm;
+  onChange: (value: EventForm) => void;
+  idPrefix: string;
+}) {
+  const set = <K extends keyof EventForm>(key: K, next: EventForm[K]) =>
+    onChange({ ...value, [key]: next });
+  const id = (name: string) => `${idPrefix}-${name}`;
+
+  return (
+    <>
+      <div className="space-y-2">
+        <Label htmlFor={id("title")}>Title</Label>
+        <Input
+          id={id("title")}
+          className="h-10"
+          value={value.title}
+          onChange={(e) => set("title", e.target.value)}
+          required
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor={id("startDate")}>Starts</Label>
+          <Input
+            id={id("startDate")}
+            type="date"
+            className="h-10"
+            value={value.startDate}
+            onChange={(e) => set("startDate", e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={id("endDate")}>Ends</Label>
+          <Input
+            id={id("endDate")}
+            type="date"
+            className="h-10"
+            min={value.startDate || undefined}
+            value={value.endDate}
+            onChange={(e) => set("endDate", e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={id("startTime")}>From</Label>
+          <Input
+            id={id("startTime")}
+            type="time"
+            className="h-10"
+            value={value.startTime}
+            onChange={(e) => set("startTime", e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={id("endTime")}>To</Label>
+          <Input
+            id={id("endTime")}
+            type="time"
+            className="h-10"
+            value={value.endTime}
+            onChange={(e) => set("endTime", e.target.value)}
+            required
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={id("location")}>Location</Label>
+        <Input
+          id={id("location")}
+          className="h-10"
+          placeholder="Optional"
+          value={value.location}
+          onChange={(e) => set("location", e.target.value)}
+        />
+      </div>
+      <Label className="flex items-start gap-2.5 font-normal">
+        <Checkbox
+          className="mt-0.5"
+          checked={value.forVolunteers}
+          onCheckedChange={(next) => set("forVolunteers", next === true)}
+        />
+        <span>
+          <span className="text-sm font-medium text-foreground">
+            Open to volunteers
+          </span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Volunteers only see the events you tick here. The team sees every
+            event either way.
+          </span>
+        </span>
+      </Label>
+      <div className="space-y-2">
+        <Label htmlFor={id("description")}>Description</Label>
+        <Textarea
+          id={id("description")}
+          placeholder="Optional"
+          value={value.description}
+          onChange={(e) => set("description", e.target.value)}
+        />
+      </div>
+    </>
+  );
+}
+
+/**
+ * The body both dialogs send. Optional text goes as null rather than "" so
+ * clearing a location actually empties the column instead of storing a blank.
+ */
+function eventPayload(form: EventForm) {
+  return {
+    title: form.title,
+    description: form.description || null,
+    startDate: form.startDate,
+    // A single-day event only needs a start date.
+    endDate: form.endDate || form.startDate,
+    startTime: form.startTime,
+    endTime: form.endTime,
+    location: form.location || null,
+    forVolunteers: form.forVolunteers,
+  };
+}
+
 function CreateEventDialog({
   onCreated,
 }: {
   onCreated: (event: AppEvent) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("17:00");
-  const [location, setLocation] = useState("");
-  const [forVolunteers, setForVolunteers] = useState(false);
+  const [form, setForm] = useState<EventForm>(BLANK_EVENT);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -833,17 +1012,7 @@ function CreateEventDialog({
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description,
-          startDate,
-          // A single-day event only needs a start date.
-          endDate: endDate || startDate,
-          startTime,
-          endTime,
-          location: location || undefined,
-          forVolunteers,
-        }),
+        body: JSON.stringify(eventPayload(form)),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -853,14 +1022,7 @@ function CreateEventDialog({
       onCreated(await res.json());
       toast.success("Event created");
       setOpen(false);
-      setTitle("");
-      setDescription("");
-      setStartDate("");
-      setEndDate("");
-      setStartTime("09:00");
-      setEndTime("17:00");
-      setLocation("");
-      setForVolunteers(false);
+      setForm(BLANK_EVENT);
     } catch {
       toast.error("Connection error");
     } finally {
@@ -878,98 +1040,7 @@ function CreateEventDialog({
           <DialogTitle>Create an event</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
-            <Input
-              id="title"
-              className="h-10"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="startDate">Starts</Label>
-              <Input
-                id="startDate"
-                type="date"
-                className="h-10"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="endDate">Ends</Label>
-              <Input
-                id="endDate"
-                type="date"
-                className="h-10"
-                min={startDate || undefined}
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="startTime">From</Label>
-              <Input
-                id="startTime"
-                type="time"
-                className="h-10"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="endTime">To</Label>
-              <Input
-                id="endTime"
-                type="time"
-                className="h-10"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="location">Location</Label>
-            <Input
-              id="location"
-              className="h-10"
-              placeholder="Optional"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
-          </div>
-          <Label className="flex items-start gap-2.5 font-normal">
-            <Checkbox
-              className="mt-0.5"
-              checked={forVolunteers}
-              onCheckedChange={(next) => setForVolunteers(next === true)}
-            />
-            <span>
-              <span className="text-sm font-medium text-foreground">
-                Open to volunteers
-              </span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                Volunteers only see the events you tick here. The team sees
-                every event either way.
-              </span>
-            </span>
-          </Label>
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              placeholder="Optional"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
+          <EventFields value={form} onChange={setForm} idPrefix="new-event" />
           <Button
             type="submit"
             className="h-10 w-full rounded-xl"
@@ -977,6 +1048,77 @@ function CreateEventDialog({
           >
             {saving && <Spinner />}
             Create event
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditEventDialog({
+  event,
+  onOpenChange,
+  onUpdated,
+}: {
+  event: AppEvent | null;
+  onOpenChange: (open: boolean) => void;
+  onUpdated: (event: AppEvent) => void;
+}) {
+  const [form, setForm] = useState<EventForm>(BLANK_EVENT);
+  const [saving, setSaving] = useState(false);
+  const [loadedId, setLoadedId] = useState<number | null>(null);
+
+  // Load the form whenever a different event is opened, the same way
+  // EditUserDialog does.
+  if (event && event.id !== loadedId) {
+    setLoadedId(event.id);
+    setForm(eventToForm(event));
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!event) return;
+    if (form.endDate && form.endDate < form.startDate) {
+      toast.error("The end date can't be before the start date");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/events/${event.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(eventPayload(form)),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Could not save changes");
+        return;
+      }
+      onUpdated(await res.json());
+      toast.success("Event updated");
+      onOpenChange(false);
+    } catch {
+      toast.error("Connection error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={event !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85dvh] gap-5 overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit event</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <EventFields value={form} onChange={setForm} idPrefix="edit-event" />
+          <Button
+            type="submit"
+            className="h-10 w-full rounded-xl"
+            disabled={saving}
+          >
+            {saving && <Spinner />}
+            Save changes
           </Button>
         </form>
       </DialogContent>

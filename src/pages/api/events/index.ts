@@ -31,6 +31,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!title || !startDate || !endDate || !startTime || !endTime) {
       return res.status(400).json({ error: "Title, start date, end date, start time, and end time are required" });
     }
+    // ISO dates compare correctly as strings, which is also how the Events
+    // page splits upcoming from past.
+    if (endDate < startDate) {
+      return res.status(400).json({ error: "The end date can't be before the start date" });
+    }
 
     const [event] = await db.insert(events).values({
       title,

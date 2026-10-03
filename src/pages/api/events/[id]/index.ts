@@ -33,7 +33,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === "PATCH") {
     const { title, description, startDate, endDate, startTime, endTime, location, forVolunteers } = req.body;
-    const updateData: Record<string, string | boolean> = {};
+    // null is meaningful here: it's how a cleared location or description
+    // empties the column instead of storing a blank string.
+    const updateData: Record<string, string | boolean | null> = {};
     if (title) updateData.title = title;
     if (description !== undefined) updateData.description = description;
     if (startDate) updateData.startDate = startDate;
@@ -43,12 +45,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (location !== undefined) updateData.location = location;
     if (forVolunteers !== undefined) updateData.forVolunteers = forVolunteers === true;
 
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: "Nothing to update" });
+    }
+
+    const existing = await db.query.events.findFirst({ where: eq(events.id, id) });
+    if (!existing) return res.status(404).json({ error: "Event not found" });
+
+    // Checked against the state the row would end up in, not just what was
+    // sent: moving the start date past an untouched end date is the easy way
+    // to invert an event, and nothing downstream expects that.
+    const resultingStart = (updateData.startDate as string) ?? existing.startDate;
+    const resultingEnd = (updateData.endDate as string) ?? existing.endDate;
+    if (resultingEnd < resultingStart) {
+      return res.status(400).json({ error: "The end date can't be before the start date" });
+    }
+
     const [updated] = await db.update(events)
       .set(updateData)
       .where(eq(events.id, id))
       .returning();
 
-    if (!updated) return res.status(404).json({ error: "Event not found" });
     return res.status(200).json(updated);
   }
 
