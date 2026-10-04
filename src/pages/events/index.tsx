@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
-import { CalendarDays, ChevronRight, Clock, MapPin, Plus } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronRight,
+  Clock,
+  MapPin,
+  Plus,
+  Users,
+} from "lucide-react";
 
 import { AppShell, AuthLoading } from "@/components/layout/app-shell";
 import { EmptyState } from "@/components/empty-state";
@@ -17,6 +24,7 @@ import {
   formatTime,
   todayISO,
 } from "@/lib/format";
+import { isFull, spotsLeft } from "@/lib/events";
 import { isOrganizer, isVolunteer } from "@/lib/nav";
 import { departmentLabel } from "@/lib/volunteers";
 
@@ -30,6 +38,8 @@ interface EventRecord {
   endTime: string;
   location: string | null;
   forVolunteers: boolean;
+  capacity: number | null;
+  attendeeCount: number;
 }
 
 export default function EventsPage() {
@@ -164,6 +174,8 @@ function EventCard({
   const status = eventStatus(event.startDate, event.endDate);
   const start = parseISO(event.startDate);
   const multiDay = event.startDate !== event.endDate;
+  const full = isFull(event.capacity, event.attendeeCount);
+  const left = spotsLeft(event.capacity, event.attendeeCount);
 
   return (
     <Link
@@ -188,6 +200,11 @@ function EventCard({
             {showAudience && event.forVolunteers && (
               <Badge variant="secondary">Volunteers</Badge>
             )}
+            {full && status !== "past" && (
+              <Badge variant="outline" className="text-muted-foreground">
+                Full
+              </Badge>
+            )}
             <StatusBadge status={status} />
           </div>
         </div>
@@ -203,6 +220,13 @@ function EventCard({
             <span className="inline-flex min-w-0 items-center gap-1.5">
               <MapPin className="size-3.5 shrink-0" />
               <span className="truncate">{event.location}</span>
+            </span>
+          )}
+          {/* Only while there is still something to say about it. */}
+          {left !== null && left > 0 && status !== "past" && (
+            <span className="inline-flex items-center gap-1.5">
+              <Users className="size-3.5 shrink-0" />
+              <span className="tabular-nums">{left} left</span>
             </span>
           )}
         </div>

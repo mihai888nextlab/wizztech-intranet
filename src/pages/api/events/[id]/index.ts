@@ -3,6 +3,13 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { events } from "@/db/schema";
 import { getSession, requireOrganizer } from "@/lib/auth";
+import { parseEventRules } from "@/lib/events";
+import {
+  attendeeCount,
+  exclusionsFor,
+  setExclusions,
+  signInBlock,
+} from "@/lib/events.server";
 import { isVolunteer } from "@/lib/roles";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -24,7 +31,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (isVolunteer(session.accountType) && !event.forVolunteers) {
       return res.status(404).json({ error: "Event not found" });
     }
-    return res.status(200).json(event);
+
+    // The page needs the rules and where the viewer stands against them, so
+    // the sign-in button can explain itself instead of just failing.
+    const [count, exclusions, block] = await Promise.all([
+      attendeeCount(id),
+      exclusionsFor(id),
+      signInBlock(session.userId, event),
+    ]);
+
+    return res.status(200).json({
+      ...event,
+      attendeeCount: count,
+      exclusions,
+      signInBlock: block,
+    });
   }
 
   if (!(await requireOrganizer(req, res))) {
@@ -35,7 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { title, description, startDate, endDate, startTime, endTime, location, forVolunteers } = req.body;
     // null is meaningful here: it's how a cleared location or description
     // empties the column instead of storing a blank string.
-    const updateData: Record<string, string | boolean | null> = {};
+    const updateData: Record<string, string | number | boolean | null> = {};
     if (title) updateData.title = title;
     if (description !== undefined) updateData.description = description;
     if (startDate) updateData.startDate = startDate;
@@ -45,7 +66,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (location !== undefined) updateData.location = location;
     if (forVolunteers !== undefined) updateData.forVolunteers = forVolunteers === true;
 
-    if (Object.keys(updateData).length === 0) {
+    const rules = parseEventRules(req.body, id);
+    if (!rules.ok) {
+      return res.status(400).json({ error: rules.error });
+    }
+    if (req.body?.capacity !== undefined) updateData.capacity = rules.value.capacity;
+
+    // The exclusion rules live in their own table, so changing only those is
+    // still a change — counting columns alone would call it an empty request.
+    const settingExclusions = req.body?.exclusionEventIds !== undefined;
+    if (Object.keys(updateData).length === 0 && !settingExclusions) {
       return res.status(400).json({ error: "Nothing to update" });
     }
 
@@ -61,12 +91,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "The end date can't be before the start date" });
     }
 
-    const [updated] = await db.update(events)
-      .set(updateData)
-      .where(eq(events.id, id))
-      .returning();
+    // Drizzle refuses an empty `set`, so skip it when only rules changed.
+    const updated =
+      Object.keys(updateData).length > 0
+        ? (
+            await db.update(events)
+              .set(updateData)
+              .where(eq(events.id, id))
+              .returning()
+          )[0]
+        : existing;
 
-    return res.status(200).json(updated);
+    if (settingExclusions) {
+      await setExclusions(id, rules.value.exclusionIds);
+    }
+
+    return res.status(200).json({
+      ...updated,
+      attendeeCount: await attendeeCount(id),
+      exclusions: await exclusionsFor(id),
+    });
   }
 
   if (req.method === "DELETE") {

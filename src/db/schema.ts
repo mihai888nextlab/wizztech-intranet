@@ -51,6 +51,11 @@ export const events = pgTable("events", {
    * Defaults to false so a new event is team-only until someone says otherwise.
    */
   forVolunteers: boolean("for_volunteers").notNull().default(false),
+  /**
+   * How many people may sign in. Null means no limit, which is what most
+   * events want — a cap is the exception, so it has to be asked for.
+   */
+  capacity: integer("capacity"),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -220,6 +225,23 @@ export const announcementFiles = pgTable("announcement_files", {
   sizeBytes: integer("size_bytes").notNull(),
   uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
 });
+
+/**
+ * "You can't come to this one if you came to that one." Each row names an
+ * event whose attendees are disqualified from `eventId` — the second slot of a
+ * workshop run twice, say, so nobody takes a place twice over.
+ *
+ * Both sides cascade: a rule is meaningless once either event is gone.
+ */
+export const eventExclusions = pgTable("event_exclusions", {
+  id: serial("id").primaryKey(),
+  /** The event being restricted. */
+  eventId: integer("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  /** Having attended this one is what disqualifies you. */
+  blockedByEventId: integer("blocked_by_event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+}, (table) => ({
+  exclusionUnique: uniqueIndex("event_exclusion_unique").on(table.eventId, table.blockedByEventId),
+}));
 
 export const attendance = pgTable("attendance", {
   id: serial("id").primaryKey(),
@@ -517,6 +539,9 @@ export const announcementDocumentsRelations = relations(announcementDocuments, (
 export const eventsRelations = relations(events, ({ one, many }) => ({
   creator: one(users, { fields: [events.createdBy], references: [users.id] }),
   attendance: many(attendance),
+  // No reverse relation for exclusions on purpose: that table has two foreign
+  // keys into events, which would make a `many` here ambiguous. Rules are
+  // always queried from the restricted event's side.
 }));
 
 export const attendanceRelations = relations(attendance, ({ one }) => ({

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import { format, parseISO } from "date-fns";
 import { CalendarDays, Check, Clock, MapPin, Share2, Users, X } from "lucide-react";
@@ -20,6 +21,7 @@ import {
   formatTime,
   initialsOf,
 } from "@/lib/format";
+import { blockMessage, spotsLeft, type SignInBlock } from "@/lib/events";
 import { isOrganizer, isVolunteer } from "@/lib/nav";
 import { eventShareText } from "@/lib/share";
 import { cn } from "@/lib/utils";
@@ -33,6 +35,13 @@ interface EventRecord {
   startTime: string;
   endTime: string;
   location: string | null;
+  /** Null means no limit. */
+  capacity: number | null;
+  attendeeCount: number;
+  /** Events whose attendees are turned away from this one. */
+  exclusions: { id: number; title: string }[];
+  /** Why the viewer can't sign in, or null if they can. */
+  signInBlock: SignInBlock | null;
 }
 
 interface Attendee {
@@ -68,6 +77,8 @@ export default function EventDetailPage() {
   if (!user) return <AuthLoading />;
 
   const isSignedIn = attendees.some((a) => a.userId === user.userId);
+  const blocked = event?.signInBlock != null;
+  const left = event ? spotsLeft(event.capacity, event.attendeeCount) : null;
   const status = event
     ? eventStatus(event.startDate, event.endDate)
     : "upcoming";
@@ -84,9 +95,14 @@ export default function EventDetailPage() {
         return;
       }
       toast.success(isSignedIn ? "Signed out" : "You're signed in");
-      setAttendees(
-        await fetch(`/api/events/${id}/attendance`).then((r) => r.json())
-      );
+      // Both reload: the roster changed, and so did the count and whatever
+      // the rules now say about this viewer.
+      const [evt, att] = await Promise.all([
+        fetch(`/api/events/${id}`).then((r) => (r.ok ? r.json() : null)),
+        fetch(`/api/events/${id}/attendance`).then((r) => (r.ok ? r.json() : [])),
+      ]);
+      if (evt) setEvent(evt);
+      setAttendees(att);
     } catch {
       toast.error("Connection error");
     } finally {
@@ -169,20 +185,61 @@ export default function EventDetailPage() {
                   className="sm:col-span-2"
                 />
               )}
+              {event.capacity !== null && (
+                <DetailItem
+                  icon={Users}
+                  label="Places"
+                  value={
+                    left === 0
+                      ? `Full — ${event.capacity} of ${event.capacity} taken`
+                      : `${left} of ${event.capacity} left`
+                  }
+                  className="sm:col-span-2"
+                />
+              )}
             </dl>
+
+            {event.exclusions.length > 0 && (
+              <div className="rounded-xl bg-muted/40 p-4 ring-1 ring-foreground/10">
+                <p className="font-heading text-sm font-medium">
+                  Who can&apos;t come
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Anyone who attended these can&apos;t sign in to this one:
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {event.exclusions.map((other) => (
+                    <li key={other.id} className="text-xs">
+                      <Link
+                        href={`/events/${other.id}`}
+                        className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      >
+                        {other.title}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {status !== "past" && (
               <div className="flex flex-col gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-0.5">
                   <p className="font-heading text-sm font-medium">
-                    {isSignedIn ? "You're on the list" : "Attending?"}
+                    {isSignedIn
+                      ? "You're on the list"
+                      : blocked
+                        ? "You can't sign in"
+                        : "Attending?"}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {!isSignedIn
-                      ? "Sign in so your attendance gets recorded."
-                      : isVolunteer(user.accountType)
+                    {isSignedIn
+                      ? isVolunteer(user.accountType)
                         ? "Thanks for helping out."
-                        : "Your attendance counts toward the leaderboard."}
+                        : "Your attendance counts toward the leaderboard."
+                      : blocked
+                        ? blockMessage(event.signInBlock!)
+                        : "Sign in so your attendance gets recorded."}
                   </p>
                 </div>
                 <Button
@@ -190,7 +247,9 @@ export default function EventDetailPage() {
                   variant={isSignedIn ? "outline" : "default"}
                   className="h-11 shrink-0 rounded-xl sm:w-auto"
                   onClick={handleAttendance}
-                  disabled={signing}
+                  /* A blocked viewer can still sign out — a rule added after
+                     they joined shouldn't trap them on the list. */
+                  disabled={signing || (blocked && !isSignedIn)}
                 >
                   {signing ? <Spinner /> : isSignedIn ? <X /> : <Check />}
                   {isSignedIn ? "Sign out" : "Sign in"}

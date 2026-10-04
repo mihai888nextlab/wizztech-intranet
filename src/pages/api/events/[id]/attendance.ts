@@ -3,6 +3,8 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attendance, events, users } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { blockMessage } from "@/lib/events";
+import { signIn, signInBlock } from "@/lib/events.server";
 import { isVolunteer } from "@/lib/roles";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -29,9 +31,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === "GET") {
     // Name the columns. `with: { user: true }` handed every signed-in viewer
     // the whole user row — password hash, roles and badge code included.
+    //
+    // `userId` has to stay: the page compares it against the viewer to decide
+    // whether to offer Sign in or Sign out. It came for free with the raw row
+    // before, and dropping it silently turned the Sign out button back into a
+    // Sign in that could only fail.
     const records = await db
       .select({
         id: attendance.id,
+        userId: attendance.userId,
         signedInAt: attendance.signedInAt,
         user: {
           id: users.id,
@@ -57,10 +65,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(409).json({ error: "Already signed in for this event" });
     }
 
-    const [record] = await db.insert(attendance).values({
-      userId: session.userId,
-      eventId,
-    }).returning();
+    // The rules are enforced inside the insert, so a place can't be taken
+    // twice by two requests that both passed an earlier check.
+    const record = await signIn(session.userId, event);
+    if (!record) {
+      // Nothing was inserted, so a rule refused. Work out which, to say so.
+      const block = await signInBlock(session.userId, event);
+      return res.status(409).json({
+        error: block ? blockMessage(block) : "Could not sign you in",
+        block,
+      });
+    }
 
     return res.status(201).json(record);
   }

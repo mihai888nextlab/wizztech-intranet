@@ -3,6 +3,8 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { events } from "@/db/schema";
 import { getSession, requireOrganizer } from "@/lib/auth";
+import { parseEventRules } from "@/lib/events";
+import { attendeeCounts, exclusionsByEvent, setExclusions } from "@/lib/events.server";
 import { isVolunteer } from "@/lib/roles";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -19,7 +21,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from(events)
       .where(isVolunteer(session.accountType) ? eq(events.forVolunteers, true) : undefined)
       .orderBy(desc(events.startDate));
-    return res.status(200).json(allEvents);
+
+    // Counts ride along so the list can mark a capped event full without a
+    // request per card, and the rules so the dashboard's edit dialog opens
+    // with the ones already set — sending it without them would quietly clear
+    // them on save.
+    const ids = allEvents.map((e) => e.id);
+    const [counts, exclusions] = await Promise.all([
+      attendeeCounts(ids),
+      exclusionsByEvent(ids),
+    ]);
+    return res.status(200).json(
+      allEvents.map((event) => ({
+        ...event,
+        attendeeCount: counts.get(event.id) ?? 0,
+        exclusions: exclusions.get(event.id) ?? [],
+      }))
+    );
   }
 
   if (req.method === "POST") {
@@ -28,6 +46,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const { title, description, startDate, endDate, startTime, endTime, location, forVolunteers } = req.body;
+
+    const rules = parseEventRules(req.body);
+    if (!rules.ok) {
+      return res.status(400).json({ error: rules.error });
+    }
     if (!title || !startDate || !endDate || !startTime || !endTime) {
       return res.status(400).json({ error: "Title, start date, end date, start time, and end time are required" });
     }
@@ -46,10 +69,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       endTime,
       location,
       forVolunteers: forVolunteers === true,
+      capacity: rules.value.capacity,
       createdBy: session.userId,
     }).returning();
 
-    return res.status(201).json(event);
+    await setExclusions(event.id, rules.value.exclusionIds);
+
+    return res.status(201).json({ ...event, attendeeCount: 0, exclusions: [] });
   }
 
   res.status(405).json({ error: "Method not allowed" });

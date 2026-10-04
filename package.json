@@ -12,6 +12,7 @@
     "db:migrate-roles": "tsx src/scripts/migrate-roles.ts",
     "db:migrate-departments": "tsx src/scripts/migrate-departments.ts",
     "db:migrate-point-departments": "tsx src/scripts/migrate-point-departments.ts",
+    "db:migrate-event-rules": "tsx src/scripts/migrate-event-rules.ts",
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {

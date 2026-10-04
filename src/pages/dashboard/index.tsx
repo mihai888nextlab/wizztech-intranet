@@ -59,6 +59,7 @@ import {
   formatTime,
   initialsOf,
 } from "@/lib/format";
+import { MAX_CAPACITY } from "@/lib/events";
 import {
   isAdmin as hasAdminRole,
   isOrganizer,
@@ -92,6 +93,11 @@ interface AppEvent {
   endTime: string;
   location: string | null;
   forVolunteers: boolean;
+  /** Null means no limit. */
+  capacity: number | null;
+  attendeeCount: number;
+  /** Events whose attendees may not sign in to this one. */
+  exclusions?: { id: number; title: string }[];
 }
 
 interface DashboardStats {
@@ -418,6 +424,7 @@ function EventsTab({
     <div className="space-y-4">
       <div className="flex justify-end">
         <CreateEventDialog
+          events={events}
           onCreated={(newEvent) => setEvents([newEvent, ...events])}
         />
       </div>
@@ -446,6 +453,15 @@ function EventsTab({
                       Volunteers
                     </Badge>
                   )}
+                  {e.capacity !== null && (
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 tabular-nums"
+                      title="Signed in out of the participant limit"
+                    >
+                      {e.attendeeCount}/{e.capacity}
+                    </Badge>
+                  )}
                 </div>
                 <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                   <span>{formatDateRange(e.startDate, e.endDate)}</span>
@@ -462,6 +478,15 @@ function EventsTab({
                       </span>
                     </>
                   )}
+                  {e.exclusions && e.exclusions.length > 0 && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        excludes {e.exclusions.length} event
+                        {e.exclusions.length === 1 ? "" : "s"}
+                      </span>
+                    </>
+                  )}
                 </p>
               </div>
               <RowMenu
@@ -475,6 +500,7 @@ function EventsTab({
 
       <EditEventDialog
         event={editing}
+        events={events}
         onOpenChange={(open) => !open && setEditing(null)}
         onUpdated={(updated) =>
           setEvents(events.map((e) => (e.id === updated.id ? updated : e)))
@@ -837,6 +863,9 @@ interface EventForm {
   endTime: string;
   location: string;
   forVolunteers: boolean;
+  /** Empty string means no limit. */
+  capacity: string;
+  exclusionEventIds: number[];
 }
 
 /** A plausible afternoon, so a new event needs fewer taps to become real. */
@@ -849,6 +878,8 @@ const BLANK_EVENT: EventForm = {
   endTime: "17:00",
   location: "",
   forVolunteers: false,
+  capacity: "",
+  exclusionEventIds: [],
 };
 
 function eventToForm(event: AppEvent): EventForm {
@@ -863,6 +894,8 @@ function eventToForm(event: AppEvent): EventForm {
     endTime: event.endTime.slice(0, 5),
     location: event.location ?? "",
     forVolunteers: event.forVolunteers,
+    capacity: event.capacity === null ? "" : String(event.capacity),
+    exclusionEventIds: (event.exclusions ?? []).map((e) => e.id),
   };
 }
 
@@ -871,10 +904,13 @@ function EventFields({
   onChange,
   /** Both dialogs can be mounted at once, so their input ids must not collide. */
   idPrefix,
+  /** Candidates for the exclusion list — every event but the one being edited. */
+  otherEvents,
 }: {
   value: EventForm;
   onChange: (value: EventForm) => void;
   idPrefix: string;
+  otherEvents: AppEvent[];
 }) {
   const set = <K extends keyof EventForm>(key: K, next: EventForm[K]) =>
     onChange({ ...value, [key]: next });
@@ -966,6 +1002,68 @@ function EventFields({
         </span>
       </Label>
       <div className="space-y-2">
+        <Label htmlFor={id("capacity")}>Participant limit</Label>
+        <Input
+          id={id("capacity")}
+          className="h-10 tabular-nums"
+          type="number"
+          min={1}
+          max={MAX_CAPACITY}
+          inputMode="numeric"
+          placeholder="No limit"
+          value={value.capacity}
+          onChange={(e) => set("capacity", e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          Leave empty for no limit. Once this many people have signed in,
+          nobody else can.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Can&apos;t have attended</Label>
+        <p className="text-xs text-muted-foreground">
+          Anyone who signed in to an event ticked here is turned away from this
+          one — for the second run of a session, so nobody takes a place twice.
+        </p>
+        {otherEvents.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No other events to choose from yet.
+          </p>
+        ) : (
+          // Scrolls rather than growing: this list is as long as the event
+          // history, and the dialog already scrolls as a whole.
+          <div className="max-h-44 space-y-2 overflow-y-auto rounded-lg bg-muted/40 p-3">
+            {otherEvents.map((other) => (
+              <Label
+                key={other.id}
+                className="flex items-start gap-2.5 font-normal"
+              >
+                <Checkbox
+                  className="mt-0.5"
+                  checked={value.exclusionEventIds.includes(other.id)}
+                  onCheckedChange={(next) =>
+                    set(
+                      "exclusionEventIds",
+                      next === true
+                        ? [...value.exclusionEventIds, other.id]
+                        : value.exclusionEventIds.filter((id) => id !== other.id)
+                    )
+                  }
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm">{other.title}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {formatDateRange(other.startDate, other.endDate)}
+                  </span>
+                </span>
+              </Label>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor={id("description")}>Description</Label>
         <Textarea
           id={id("description")}
@@ -993,12 +1091,16 @@ function eventPayload(form: EventForm) {
     endTime: form.endTime,
     location: form.location || null,
     forVolunteers: form.forVolunteers,
+    capacity: form.capacity === "" ? null : Number(form.capacity),
+    exclusionEventIds: form.exclusionEventIds,
   };
 }
 
 function CreateEventDialog({
+  events,
   onCreated,
 }: {
+  events: AppEvent[];
   onCreated: (event: AppEvent) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1040,7 +1142,12 @@ function CreateEventDialog({
           <DialogTitle>Create an event</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <EventFields value={form} onChange={setForm} idPrefix="new-event" />
+          <EventFields
+            value={form}
+            onChange={setForm}
+            idPrefix="new-event"
+            otherEvents={events}
+          />
           <Button
             type="submit"
             className="h-10 w-full rounded-xl"
@@ -1057,10 +1164,12 @@ function CreateEventDialog({
 
 function EditEventDialog({
   event,
+  events,
   onOpenChange,
   onUpdated,
 }: {
   event: AppEvent | null;
+  events: AppEvent[];
   onOpenChange: (open: boolean) => void;
   onUpdated: (event: AppEvent) => void;
 }) {
@@ -1111,7 +1220,13 @@ function EditEventDialog({
           <DialogTitle>Edit event</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <EventFields value={form} onChange={setForm} idPrefix="edit-event" />
+          <EventFields
+            value={form}
+            onChange={setForm}
+            idPrefix="edit-event"
+            // An event can't exclude its own attendees, so it isn't offered.
+            otherEvents={events.filter((e) => e.id !== event?.id)}
+          />
           <Button
             type="submit"
             className="h-10 w-full rounded-xl"
